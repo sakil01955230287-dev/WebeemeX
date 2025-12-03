@@ -408,6 +408,146 @@
             padding: 1rem;
             margin-top: 0.5rem;
         }
+        
+        /* Hold to Pay Button Styles */
+        .hold-to-pay-btn {
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s;
+            cursor: pointer;
+            user-select: none;
+            border: none;
+        }
+        
+        .hold-progress {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            background: linear-gradient(90deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.6) 100%);
+            width: 0%;
+            transition: width 2s linear;
+            z-index: 1;
+        }
+        
+        .hold-to-pay-btn.holding .hold-progress {
+            animation: fillProgress 2s linear forwards;
+        }
+        
+        .hold-to-pay-btn .btn-content {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        @keyframes fillProgress {
+            0% { width: 0%; }
+            100% { width: 100%; }
+        }
+        
+        /* Success Greeting Page */
+        .success-greeting {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.5s, visibility 0.5s;
+        }
+        
+        .success-greeting.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .greeting-content {
+            background: white;
+            border-radius: 20px;
+            padding: 3rem;
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            transform: scale(0.9);
+            animation: popIn 0.5s ease-out forwards;
+        }
+        
+        @keyframes popIn {
+            0% { transform: scale(0.9); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        
+        .greeting-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem;
+            font-size: 2.5rem;
+            color: white;
+            animation: bounce 1s infinite alternate;
+        }
+        
+        @keyframes bounce {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(-10px); }
+        }
+        
+        /* Improved button styles for hold system */
+        .hold-btn-container {
+            margin-top: 1.5rem;
+        }
+        
+        .hold-instruction {
+            text-align: center;
+            font-size: 0.75rem;
+            color: #6b7280;
+            margin-top: 0.5rem;
+        }
+        
+        /* Loading overlay for database operations */
+        .db-loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(10px);
+            z-index: 9998;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            color: white;
+        }
+        
+        .db-loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #4f46e5;
+            animation: spin 1s ease-in-out infinite;
+            margin-bottom: 1.5rem;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 min-h-screen flex flex-col">
@@ -437,6 +577,14 @@
                 <p id="successNote" class="text-sm opacity-80">You will be redirected in <span id="countdown">5</span> seconds</p>
             </div>
         </div>
+    </div>
+
+    <!-- Database Loading Overlay -->
+    <div id="dbLoading" class="db-loading-overlay hidden">
+        <div class="db-loading-spinner"></div>
+        <h2 class="text-xl font-bold mb-2">Processing Transaction</h2>
+        <p class="text-gray-300">Please wait while we update the database...</p>
+        <p class="text-sm text-gray-400 mt-4">This may take a few seconds</p>
     </div>
 
     <!-- Main App Container -->
@@ -476,6 +624,7 @@
         let localUsers = [];
         let localHistory = [];
         let localTransactions = [];
+        let localP2PHistory = [];
         let currentUser = null;
         let userToDeleteId = null;
         let depositUserId = null;
@@ -483,6 +632,8 @@
         let currentUserView = 'dashboard'; // 'dashboard', 'deposit', 'withdraw', 'history', 'profile', 'p2p'
         let successTimer = null;
         let selectedRecipient = null;
+        let holdTimer = null;
+        let isHolding = false;
 
         // Default Data Seeding (Used if DB is empty)
         const defaultUsers = [
@@ -571,6 +722,7 @@
             const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'users');
             const historyRef = collection(db, 'artifacts', appId, 'public', 'data', 'fundHistory');
             const transactionsRef = collection(db, 'artifacts', appId, 'public', 'data', 'transactions');
+            const p2pHistoryRef = collection(db, 'artifacts', appId, 'public', 'data', 'p2pHistory');
 
             // Listener for Users
             onSnapshot(usersRef, (snapshot) => {
@@ -627,6 +779,15 @@
                 // Auto-delete transactions older than 30 days (except last 5 per user)
                 autoDeleteOldTransactions();
                 
+                refreshUI();
+            });
+
+            // Listener for P2P History
+            onSnapshot(p2pHistoryRef, (snapshot) => {
+                localP2PHistory = [];
+                snapshot.forEach((doc) => {
+                    localP2PHistory.push({ ...doc.data(), docId: doc.id });
+                });
                 refreshUI();
             });
         }
@@ -720,6 +881,80 @@
                 toast.classList.add('translate-x-full');
                 setTimeout(() => toast.classList.add('hidden'), 300);
             }, 3000);
+        }
+
+        // Show Database Loading
+        function showDBLoading() {
+            const loading = document.getElementById('dbLoading');
+            loading.classList.remove('hidden');
+        }
+
+        // Hide Database Loading
+        function hideDBLoading() {
+            const loading = document.getElementById('dbLoading');
+            loading.classList.add('hidden');
+        }
+
+        // Show Success Greeting Page
+        function showGreetingPage(type, message, amount = 0, recipientName = '') {
+            // Remove any existing greeting page
+            const existingGreeting = document.getElementById('greetingPage');
+            if (existingGreeting) {
+                existingGreeting.remove();
+            }
+            
+            const greetingHTML = `
+                <div id="greetingPage" class="success-greeting">
+                    <div class="greeting-content">
+                        <div id="greetingIcon" class="greeting-icon">
+                            ${type === 'success' ? '<i class="fas fa-check-circle"></i>' : 
+                              type === 'error' ? '<i class="fas fa-times-circle"></i>' : 
+                              '<i class="fas fa-spinner fa-spin"></i>'}
+                        </div>
+                        <h2 id="greetingTitle" class="text-2xl font-bold text-gray-800 mb-4">
+                            ${type === 'success' ? 'Success!' : 
+                              type === 'error' ? 'Error!' : 
+                              'Processing...'}
+                        </h2>
+                        <p id="greetingMessage" class="text-gray-600 mb-6">${message}</p>
+                        ${amount > 0 ? `<div class="text-3xl font-bold text-gray-800 my-4">${formatCurrency(amount)}</div>` : ''}
+                        ${recipientName ? `<div class="text-lg font-semibold text-purple-600 my-2">${recipientName}</div>` : ''}
+                        <div class="text-sm text-gray-500">
+                            <i class="fas fa-spinner fa-spin mr-2"></i>
+                            Updating your dashboard...
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.insertAdjacentHTML('beforeend', greetingHTML);
+            
+            const greetingPage = document.getElementById('greetingPage');
+            setTimeout(() => {
+                greetingPage.classList.add('active');
+            }, 10);
+            
+            // Auto-hide after 3 seconds for success
+            if (type === 'success') {
+                setTimeout(() => {
+                    hideGreetingPage();
+                    // Refresh the current view
+                    if (currentUserView === 'p2p') {
+                        selectedRecipient = null;
+                        renderUserPanel();
+                    }
+                }, 3000);
+            }
+        }
+
+        function hideGreetingPage() {
+            const greetingPage = document.getElementById('greetingPage');
+            if (greetingPage) {
+                greetingPage.classList.remove('active');
+                setTimeout(() => {
+                    greetingPage.remove();
+                }, 500);
+            }
         }
 
         // Show Success Floating Page
@@ -1485,8 +1720,6 @@
                                 <button onclick="setUserCurrentView('dashboard')" class="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${dashboardButtonClass}">
                                     <i class="fas fa-tachometer-alt mr-2"></i> Dashboard
                                 </button>
-                            </div>
-                        </div>
                     </div>
 
                     <main class="flex-grow max-w-7xl mx-auto w-full px-4 py-8 fade-in">
@@ -1504,27 +1737,46 @@
             if (currentUserView === 'deposit') {
                 const depositForm = document.getElementById('userDepositForm');
                 if (depositForm) {
-                    depositForm.addEventListener('submit', handleUserDeposit);
+                    depositForm.addEventListener('submit', function(e) {
+                        e.preventDefault();
+                        showToast('Info', 'Please use the Hold button to submit', 'info');
+                    });
+                    
                     // Add event listeners for radio buttons
                     document.querySelectorAll('input[name="depositMethod"]').forEach(radio => {
                         radio.addEventListener('change', updateDepositDetailsLabel);
                     });
+                    
+                    // Set up hold button
+                    setTimeout(() => {
+                        setupDepositHoldButton();
+                    }, 100);
                 }
             }
             
             if (currentUserView === 'withdraw') {
                 const withdrawForm = document.getElementById('userWithdrawForm');
                 if (withdrawForm) {
-                    withdrawForm.addEventListener('submit', handleUserWithdraw);
+                    withdrawForm.addEventListener('submit', function(e) {
+                        e.preventDefault();
+                        showToast('Info', 'Please use the Hold button to submit', 'info');
+                    });
+                    
                     // Add real-time validation for withdrawal amount
                     const amountInput = document.getElementById('userWithdrawAmount');
                     if (amountInput) {
                         amountInput.addEventListener('input', validateWithdrawAmount);
                     }
+                    
                     // Add event listeners for radio buttons
                     document.querySelectorAll('input[name="withdrawMethod"]').forEach(radio => {
                         radio.addEventListener('change', updateWithdrawDetailsLabel);
                     });
+                    
+                    // Set up hold button
+                    setTimeout(() => {
+                        setupWithdrawHoldButton();
+                    }, 100);
                 }
             }
             
@@ -1538,13 +1790,18 @@
             if (currentUserView === 'p2p') {
                 const p2pForm = document.getElementById('p2pTransferForm');
                 if (p2pForm) {
-                    p2pForm.addEventListener('submit', handleP2PTransfer);
+                    p2pForm.addEventListener('submit', function(e) {
+                        e.preventDefault();
+                        showToast('Info', 'Please use the Hold button to transfer', 'info');
+                    });
                 }
+                
                 // Add event listener for recipient search
                 const recipientInput = document.getElementById('recipientUsername');
                 if (recipientInput) {
                     recipientInput.addEventListener('input', searchRecipient);
                 }
+                
                 // Add real-time validation for P2P amount
                 const p2pAmountInput = document.getElementById('p2pAmount');
                 if (p2pAmountInput) {
@@ -1555,6 +1812,11 @@
                 if (selectedRecipient) {
                     updateSelectedRecipientUI();
                 }
+                
+                // Set up hold-to-pay button
+                setTimeout(() => {
+                    setupP2PHoldButton();
+                }, 100);
             }
         }
 
@@ -1593,6 +1855,12 @@
                 const amountSection = document.querySelector('#amountSection');
                 if (amountSection) {
                     amountSection.classList.remove('hidden');
+                }
+                
+                // Show the hold button section
+                const holdButtonSection = document.querySelector('#p2pHoldButtonSection');
+                if (holdButtonSection) {
+                    holdButtonSection.classList.remove('hidden');
                 }
             }
         }
@@ -1765,9 +2033,6 @@
                                     <div id="p2pAmountValidation" class="amount-validation hidden">
                                         <i class="fas mr-1"></i> <span id="p2pAmountMessage"></span>
                                     </div>
-                                    <div id="p2pError" class="text-red-500 text-xs mt-1 hidden">
-                                        <i class="fas fa-exclamation-circle mr-1"></i> You don't have sufficient balance!
-                                    </div>
                                 </div>
                                 
                                 <div id="noteSection" ${!selectedRecipient ? 'class="hidden"' : ''}>
@@ -1792,35 +2057,25 @@
                                     </div>
                                 </div>
                                 
-                                <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-3 rounded-lg shadow-md transition-colors">
-                                    <i class="fas fa-paper-plane mr-2"></i> Send Money Instantly
-                                </button>
+                                <div id="p2pHoldButtonSection" ${!selectedRecipient ? 'class="hidden"' : ''}>
+                                    <button type="button" id="p2pHoldButton" class="hold-to-pay-btn w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 rounded-lg shadow-md transition-all relative">
+                                        <div class="hold-progress"></div>
+                                        <div class="btn-content">
+                                            <i class="fas fa-hand-holding"></i>
+                                            <span>Hold to Send Money</span>
+                                        </div>
+                                    </button>
+                                    <p class="hold-instruction">Press and hold for 2 seconds to confirm transfer</p>
+                                </div>
                             </form>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Recent P2P Transfers -->
+                <!-- P2P Transfer History -->
                 <div class="mt-8">
-                    <h3 class="text-xl font-bold text-gray-800 mb-4">Recent P2P Transfers</h3>
-                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left border-collapse">
-                                <thead class="bg-gray-50 border-b border-gray-200">
-                                    <tr>
-                                        <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Date</th>
-                                        <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Recipient</th>
-                                        <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Amount</th>
-                                        <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
-                                        <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Note</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-gray-100">
-                                    ${getRecentP2PTransactions()}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-4">P2P Transfer History</h3>
+                    ${renderP2PHistory()}
                 </div>
             `;
         }
@@ -1830,7 +2085,7 @@
             const validationDiv = document.getElementById('p2pAmountValidation');
             const amount = parseFloat(amountInput.value);
             
-            if (amount < 10) {
+            if (!amount || amount < 10) {
                 validationDiv.classList.remove('hidden');
                 validationDiv.classList.remove('valid');
                 validationDiv.classList.add('invalid');
@@ -1857,54 +2112,82 @@
             }
         }
 
-        function getRecentP2PTransactions() {
-            // Get user's recent P2P transactions from history
-            const userP2PHistory = localHistory
-                .filter(log => (log.userId === currentUser.id || log.recipientId === currentUser.id) && log.type === 'p2p')
+        function renderP2PHistory() {
+            // Get user's P2P transactions from P2P history
+            const userP2PHistory = localP2PHistory
+                .filter(log => (log.userId === currentUser.id || log.recipientId === currentUser.id))
                 .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-                .slice(0, 5);
+                .slice(0, 10);
 
             if (userP2PHistory.length === 0) {
                 return `
-                    <tr>
-                        <td colspan="5" class="px-6 py-8 text-center text-gray-500">
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                        <div class="p-8 text-center text-gray-500">
                             <i class="fas fa-user-friends text-xl mb-2 text-purple-500"></i>
                             <p>No P2P transactions found.</p>
-                        </td>
-                    </tr>
+                        </div>
+                    </div>
                 `;
             }
 
-            return userP2PHistory.map(log => {
-                const isSender = log.userId === currentUser.id;
-                const amountColor = isSender ? 'text-red-600' : 'text-green-600';
-                const amountPrefix = isSender ? '-' : '+';
-                const recipientOrSender = isSender ? 'To' : 'From';
-                const recipientOrSenderName = isSender ? (log.recipientName || 'Unknown') : (log.username || 'Unknown');
-                
-                return `
-                    <tr class="hover:bg-gray-50 transition-colors">
-                        <td class="px-6 py-4 text-sm text-gray-700">
-                            ${new Date(log.timestamp).toLocaleDateString()}
-                        </td>
-                        <td class="px-6 py-4">
-                            <div class="font-medium text-gray-900">${recipientOrSenderName}</div>
-                            <div class="text-xs text-gray-500">${recipientOrSender}: ${isSender ? 'Sent' : 'Received'}</div>
-                        </td>
-                        <td class="px-6 py-4 text-sm font-bold ${amountColor}">
-                            ${amountPrefix} ${formatCurrency(log.amount)}
-                        </td>
-                        <td class="px-6 py-4">
-                            <span class="px-2 py-1 text-xs rounded-full font-medium bg-green-100 text-green-800">
-                                Completed
-                            </span>
-                        </td>
-                        <td class="px-6 py-4 text-xs text-gray-500">
-                            ${log.transactionDetails || log.details || '-'}
-                        </td>
-                    </tr>
-                `;
-            }).join('');
+            return `
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead class="bg-gray-50 border-b border-gray-200">
+                                <tr>
+                                    <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Date</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Type</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">User</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Amount</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Note</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100">
+                                ${userP2PHistory.map(log => {
+                                    const isSender = log.userId === currentUser.id;
+                                    const amountColor = isSender ? 'text-red-600' : 'text-green-600';
+                                    const amountPrefix = isSender ? '-' : '+';
+                                    const otherUser = isSender ? (log.recipientName || 'Unknown') : (log.senderName || log.username || 'Unknown');
+                                    const typeText = isSender ? 'Sent' : 'Received';
+                                    const typeClass = isSender ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800';
+                                    
+                                    return `
+                                    <tr class="hover:bg-gray-50 transition-colors">
+                                        <td class="px-6 py-4 text-sm text-gray-700">
+                                            ${new Date(log.timestamp).toLocaleDateString()}
+                                        </td>
+                                        <td class="px-6 py-4">
+                                            <span class="px-2 py-1 text-xs rounded-full font-medium ${typeClass}">
+                                                ${typeText}
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4">
+                                            <div class="font-medium text-gray-900">${otherUser}</div>
+                                            <div class="text-xs text-gray-500">
+                                                ${isSender ? 'To' : 'From'}: @${isSender ? (log.recipientUsername || 'unknown') : (log.senderUsername || log.username || 'unknown')}
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 text-sm font-bold ${amountColor}">
+                                            ${amountPrefix} ${formatCurrency(log.amount)}
+                                        </td>
+                                        <td class="px-6 py-4">
+                                            <span class="px-2 py-1 text-xs rounded-full font-medium bg-green-100 text-green-800">
+                                                Completed
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 text-xs text-gray-500">
+                                            ${log.note || log.transactionDetails || '-'}
+                                        </td>
+                                    </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
         }
 
         function searchRecipient() {
@@ -1923,7 +2206,7 @@
                 user.role !== 'admin' &&
                 (user.username.toLowerCase().includes(searchTerm) || 
                  user.fullName.toLowerCase().includes(searchTerm))
-            ).slice(0, 5); // Limit to 5 results
+            ).slice(0, 5);
             
             if (filteredUsers.length === 0) {
                 resultsDiv.innerHTML = `
@@ -1957,19 +2240,7 @@
         function selectRecipient(userId) {
             selectedRecipient = localUsers.find(u => u.id === userId);
             if (selectedRecipient) {
-                // Update the UI without re-rendering the entire panel
                 updateSelectedRecipientUI();
-                
-                // Show the other form sections
-                const amountSection = document.getElementById('amountSection');
-                const noteSection = document.getElementById('noteSection');
-                const infoSection = document.getElementById('infoSection');
-                const submitButton = document.getElementById('submitButton');
-                
-                if (amountSection) amountSection.classList.remove('hidden');
-                if (noteSection) noteSection.classList.remove('hidden');
-                if (infoSection) infoSection.classList.remove('hidden');
-                if (submitButton) submitButton.classList.remove('hidden');
                 
                 // Clear search results
                 const resultsDiv = document.getElementById('recipientSearchResults');
@@ -1985,38 +2256,73 @@
 
         function clearRecipient() {
             selectedRecipient = null;
-            // Instead of full re-render, just update the UI
-            const recipientSection = document.querySelector('#recipientSection');
-            if (recipientSection) {
-                recipientSection.innerHTML = `
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Recipient Username</label>
-                    <input type="text" id="recipientUsername" class="w-full p-3 rounded-lg border border-gray-200 focus:ring-2 focus:ring-purple-500 outline-none" placeholder="Enter username" required>
-                    <div id="recipientSearchResults" class="mt-2"></div>
-                `;
-                
-                // Re-attach event listener
-                const recipientInput = document.getElementById('recipientUsername');
-                if (recipientInput) {
-                    recipientInput.addEventListener('input', searchRecipient);
-                }
-            }
-            
-            // Hide other sections
-            const amountSection = document.getElementById('amountSection');
-            const noteSection = document.getElementById('noteSection');
-            const infoSection = document.getElementById('infoSection');
-            const submitButton = document.getElementById('submitButton');
-            
-            if (amountSection) amountSection.classList.add('hidden');
-            if (noteSection) noteSection.classList.add('hidden');
-            if (infoSection) infoSection.classList.add('hidden');
-            if (submitButton) submitButton.classList.add('hidden');
+            renderUserP2P();
         }
 
-        // P2P Transfer Handler - DIRECT TRANSFER (No admin approval)
-        async function handleP2PTransfer(e) {
-            e.preventDefault();
-            
+        // Setup P2P Hold Button
+        function setupP2PHoldButton() {
+            const p2pHoldButton = document.getElementById('p2pHoldButton');
+            if (!p2pHoldButton) return;
+
+            let holdStartTime = null;
+            const holdDuration = 2000; // 2 seconds
+
+            p2pHoldButton.addEventListener('mousedown', startHold);
+            p2pHoldButton.addEventListener('mouseup', endHold);
+            p2pHoldButton.addEventListener('mouseleave', cancelHold);
+            p2pHoldButton.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                startHold();
+            });
+            p2pHoldButton.addEventListener('touchend', endHold);
+            p2pHoldButton.addEventListener('touchcancel', cancelHold);
+
+            function startHold() {
+                if (!validateP2PAmount()) {
+                    showToast('Error', 'Please enter a valid amount', 'error');
+                    return;
+                }
+
+                isHolding = true;
+                holdStartTime = Date.now();
+                p2pHoldButton.classList.add('holding');
+                p2pHoldButton.disabled = true;
+
+                holdTimer = setTimeout(() => {
+                    // Hold completed
+                    processP2PTransfer();
+                    p2pHoldButton.classList.remove('holding');
+                    p2pHoldButton.disabled = false;
+                    isHolding = false;
+                }, holdDuration);
+            }
+
+            function endHold() {
+                if (!isHolding) return;
+                
+                clearTimeout(holdTimer);
+                p2pHoldButton.classList.remove('holding');
+                p2pHoldButton.disabled = false;
+                isHolding = false;
+                
+                const holdTime = Date.now() - holdStartTime;
+                if (holdTime < holdDuration) {
+                    showToast('Info', 'Hold longer to complete transfer', 'info');
+                }
+            }
+
+            function cancelHold() {
+                if (!isHolding) return;
+                
+                clearTimeout(holdTimer);
+                p2pHoldButton.classList.remove('holding');
+                p2pHoldButton.disabled = false;
+                isHolding = false;
+            }
+        }
+
+        // Process P2P Transfer after hold
+        async function processP2PTransfer() {
             if (!selectedRecipient) {
                 showToast('Error', 'Please select a recipient', 'error');
                 return;
@@ -2042,12 +2348,18 @@
             }
             
             try {
+                // Show loading and greeting page
+                showDBLoading();
+                showGreetingPage('processing', 'Processing your P2P transfer...', amount);
+                
                 // Get document IDs for both users
                 const senderDocId = getFirestoreDocId(currentUser.id);
                 const recipientDocId = getFirestoreDocId(selectedRecipient.id);
                 
                 if (!senderDocId || !recipientDocId) {
                     showToast('Error', 'User data not found', 'error');
+                    hideDBLoading();
+                    hideGreetingPage();
                     return;
                 }
                 
@@ -2063,8 +2375,8 @@
                     balance: selectedRecipient.balance + amount 
                 });
                 
-                // Record the transaction in history (both for sender and recipient)
-                const historyRef = collection(db, 'artifacts', appId, 'public', 'data', 'fundHistory');
+                // Record the transaction in P2P history
+                const p2pRef = collection(db, 'artifacts', appId, 'public', 'data', 'p2pHistory');
                 
                 // Record for sender
                 const senderHistory = {
@@ -2075,13 +2387,12 @@
                     recipientUsername: selectedRecipient.username,
                     recipientName: selectedRecipient.fullName,
                     amount: amount,
-                    method: 'p2p',
-                    type: 'p2p',
-                    transactionDetails: note || 'P2P Transfer',
+                    type: 'sent',
+                    note: note || 'P2P Transfer',
                     timestamp: new Date().toISOString(),
                     status: 'completed'
                 };
-                await addDoc(historyRef, senderHistory);
+                await addDoc(p2pRef, senderHistory);
                 
                 // Record for recipient
                 const recipientHistory = {
@@ -2092,26 +2403,29 @@
                     senderUsername: currentUser.username,
                     senderName: currentUser.fullName,
                     amount: amount,
-                    method: 'p2p',
-                    type: 'p2p',
-                    transactionDetails: note || 'P2P Transfer Received',
+                    type: 'received',
+                    note: note || 'P2P Transfer Received',
                     timestamp: new Date().toISOString(),
                     status: 'completed'
                 };
-                await addDoc(historyRef, recipientHistory);
+                await addDoc(p2pRef, recipientHistory);
                 
-                // Show success page
-                showSuccessPage('p2p', amount, '', selectedRecipient.fullName);
-                
-                // Reset form and state
-                selectedRecipient = null;
-                setUserCurrentView('p2p');
+                // Hide loading and show success
+                hideDBLoading();
+                showGreetingPage('success', `৳${amount} transferred successfully`, amount, selectedRecipient.fullName);
                 
                 // Show success toast
-                showToast('Success', `৳${amount} transferred successfully to ${selectedRecipient.fullName}`, 'success');
+                showToast('Success', `৳${amount} transferred to ${selectedRecipient.fullName}`, 'success');
+                
+                // Reset form after delay (handled by greeting page timeout)
                 
             } catch (err) {
                 console.error('P2P transfer error:', err);
+                hideDBLoading();
+                showGreetingPage('error', 'Failed to process transfer. Please try again.');
+                setTimeout(() => {
+                    hideGreetingPage();
+                }, 3000);
                 showToast('Error', 'Failed to process P2P transfer', 'error');
             }
         }
@@ -2374,9 +2688,16 @@
                             <textarea id="depositDetails" class="w-full p-3 rounded-lg border border-gray-200 focus:ring-2 focus:ring-gray-500 outline-none" placeholder="Example: SHAKIL or J0H5GHSTP5" rows="3" required></textarea>
                         </div>
                         
-                        <button type="submit" class="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 rounded-lg shadow-md transition-colors">
-                            Submit Deposit Request
-                        </button>
+                        <div class="hold-btn-container">
+                            <button type="button" id="depositHoldButton" class="hold-to-pay-btn w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-4 rounded-lg shadow-md transition-all relative">
+                                <div class="hold-progress"></div>
+                                <div class="btn-content">
+                                    <i class="fas fa-hand-holding"></i>
+                                    <span>Hold to Submit Deposit Request</span>
+                                </div>
+                            </button>
+                            <p class="hold-instruction">Press and hold for 2 seconds to confirm</p>
+                        </div>
                     </form>
                 </div>
                 
@@ -2474,9 +2795,16 @@
                             <textarea id="withdrawDetails" class="w-full p-3 rounded-lg border border-gray-200 focus:ring-2 focus:ring-gray-500 outline-none" placeholder="Enter account details" rows="3" required></textarea>
                         </div>
                         
-                        <button type="submit" class="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 rounded-lg shadow-md transition-colors">
-                            Submit Withdrawal Request
-                        </button>
+                        <div class="hold-btn-container">
+                            <button type="button" id="withdrawHoldButton" class="hold-to-pay-btn w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-4 rounded-lg shadow-md transition-all relative">
+                                <div class="hold-progress"></div>
+                                <div class="btn-content">
+                                    <i class="fas fa-hand-holding"></i>
+                                    <span>Hold to Submit Withdrawal Request</span>
+                                </div>
+                            </button>
+                            <p class="hold-instruction">Press and hold for 2 seconds to confirm</p>
+                        </div>
                     </form>
                 </div>
                 
@@ -2533,9 +2861,9 @@
         }
 
         function renderUserHistory() {
-            // Get user's transactions from history
+            // Get user's NON-P2P transactions from history (deposits and withdrawals only)
             const userHistory = localHistory
-                .filter(log => log.userId === currentUser.id || log.recipientId === currentUser.id)
+                .filter(log => log.userId === currentUser.id && log.type !== 'p2p')
                 .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
                 .slice(0, 10);
 
@@ -2553,15 +2881,14 @@
                 switch(type) {
                     case 'deposit': return 'text-green-600';
                     case 'withdraw': return 'text-red-600';
-                    case 'p2p': return 'text-purple-600';
                     default: return 'text-gray-600';
                 }
             };
 
             return `
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-2">Transaction History</h2>
-                    <p class="text-gray-600 mb-6">Your recent transactions</p>
+                    <h2 class="text-2xl font-bold text-gray-800 mb-2">Deposit/Withdrawal History</h2>
+                    <p class="text-gray-600 mb-6">Your deposit and withdrawal transactions (P2P transfers are shown separately)</p>
                     
                     <div class="overflow-x-auto">
                         <table class="w-full text-left border-collapse">
@@ -2577,17 +2904,8 @@
                             </thead>
                             <tbody class="divide-y divide-gray-100">
                                 ${userHistory.length > 0 ? userHistory.map(log => {
-                                    const isSender = log.userId === currentUser.id;
-                                    const isP2PReceiver = log.type === 'p2p' && log.recipientId === currentUser.id;
-                                    const amountColor = log.type === 'deposit' ? 'text-green-600' : 
-                                                       log.type === 'withdraw' ? 'text-red-600' : 
-                                                       isSender ? 'text-red-600' : 'text-green-600';
-                                    const amountPrefix = log.type === 'deposit' ? '+' : 
-                                                        log.type === 'withdraw' ? '-' : 
-                                                        isSender ? '-' : '+';
-                                    const details = log.type === 'p2p' && isSender ? `To: ${log.recipientName || 'Unknown'}` :
-                                                   log.type === 'p2p' && isP2PReceiver ? `From: ${log.senderName || log.username || 'Unknown'}` :
-                                                   log.transactionDetails || log.details || '';
+                                    const amountColor = log.type === 'deposit' ? 'text-green-600' : 'text-red-600';
+                                    const amountPrefix = log.type === 'deposit' ? '+' : '-';
                                     
                                     return `
                                     <tr class="hover:bg-gray-50 transition-colors">
@@ -2595,7 +2913,7 @@
                                             ${new Date(log.timestamp).toLocaleDateString()}
                                         </td>
                                         <td class="px-4 py-3 text-sm font-medium ${getTypeStyle(log.type)}">
-                                            ${log.type === 'p2p' ? (isSender ? 'P2P Sent' : 'P2P Received') : log.type.charAt(0).toUpperCase() + log.type.slice(1)}
+                                            ${log.type.charAt(0).toUpperCase() + log.type.slice(1)}
                                         </td>
                                         <td class="px-4 py-3 text-sm font-bold ${amountColor}">
                                             ${amountPrefix} ${formatCurrency(log.amount)}
@@ -2609,7 +2927,7 @@
                                             </span>
                                         </td>
                                         <td class="px-4 py-3 text-xs text-gray-500">
-                                            ${details}
+                                            ${log.transactionDetails || log.details || ''}
                                             ${log.rejectionReason ? `<div class="text-red-500 mt-1"><i class="fas fa-times-circle mr-1"></i>${log.rejectionReason}</div>` : 
                                               log.status === 'approved' ? '<div class="text-green-500"><i class="fas fa-check-circle mr-1"></i>Approved by admin</div>' :
                                               log.status === 'pending' ? '<div class="text-yellow-500"><i class="fas fa-clock mr-1"></i>Waiting for approval</div>' : ''}
@@ -2620,7 +2938,7 @@
                                     <tr>
                                         <td colspan="6" class="px-4 py-8 text-center text-gray-500">
                                             <i class="fas fa-exchange-alt text-xl mb-2"></i>
-                                            <p>No transaction history found.</p>
+                                            <p>No deposit/withdrawal history found.</p>
                                         </td>
                                     </tr>
                                 `}
@@ -2634,8 +2952,162 @@
                             Showing last 10 transactions. Older transactions are automatically deleted after 30 days.
                         </div>
                     ` : ''}
+                    
+                    <div class="mt-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <div class="flex items-center">
+                            <i class="fas fa-info-circle text-blue-500 mr-2"></i>
+                            <p class="text-sm text-blue-700">
+                                <strong>Note:</strong> P2P transfers are shown in the P2P Transfer History section, not here.
+                            </p>
+                        </div>
+                    </div>
                 </div>
             `;
+        }
+
+        // Setup Deposit Hold Button
+        function setupDepositHoldButton() {
+            const depositHoldButton = document.getElementById('depositHoldButton');
+            if (!depositHoldButton) return;
+
+            let holdStartTime = null;
+            const holdDuration = 2000;
+
+            depositHoldButton.addEventListener('mousedown', startHold);
+            depositHoldButton.addEventListener('mouseup', endHold);
+            depositHoldButton.addEventListener('mouseleave', cancelHold);
+            depositHoldButton.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                startHold();
+            });
+            depositHoldButton.addEventListener('touchend', endHold);
+            depositHoldButton.addEventListener('touchcancel', cancelHold);
+
+            function startHold() {
+                const amount = parseFloat(document.getElementById('userDepositAmount').value);
+                const method = document.querySelector('input[name="depositMethod"]:checked')?.value;
+                
+                if (!amount || amount < 10) {
+                    showToast('Error', 'Minimum deposit amount is ৳10', 'error');
+                    return;
+                }
+                
+                if (!method) {
+                    showToast('Error', 'Please select a payment method', 'error');
+                    return;
+                }
+
+                isHolding = true;
+                holdStartTime = Date.now();
+                depositHoldButton.classList.add('holding');
+                depositHoldButton.disabled = true;
+
+                holdTimer = setTimeout(() => {
+                    // Hold completed
+                    handleUserDeposit();
+                    depositHoldButton.classList.remove('holding');
+                    depositHoldButton.disabled = false;
+                    isHolding = false;
+                }, holdDuration);
+            }
+
+            function endHold() {
+                if (!isHolding) return;
+                
+                clearTimeout(holdTimer);
+                depositHoldButton.classList.remove('holding');
+                depositHoldButton.disabled = false;
+                isHolding = false;
+                
+                const holdTime = Date.now() - holdStartTime;
+                if (holdTime < holdDuration) {
+                    showToast('Info', 'Hold longer to submit request', 'info');
+                }
+            }
+
+            function cancelHold() {
+                if (!isHolding) return;
+                
+                clearTimeout(holdTimer);
+                depositHoldButton.classList.remove('holding');
+                depositHoldButton.disabled = false;
+                isHolding = false;
+            }
+        }
+
+        // Setup Withdraw Hold Button
+        function setupWithdrawHoldButton() {
+            const withdrawHoldButton = document.getElementById('withdrawHoldButton');
+            if (!withdrawHoldButton) return;
+
+            let holdStartTime = null;
+            const holdDuration = 2000;
+
+            withdrawHoldButton.addEventListener('mousedown', startHold);
+            withdrawHoldButton.addEventListener('mouseup', endHold);
+            withdrawHoldButton.addEventListener('mouseleave', cancelHold);
+            withdrawHoldButton.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                startHold();
+            });
+            withdrawHoldButton.addEventListener('touchend', endHold);
+            withdrawHoldButton.addEventListener('touchcancel', cancelHold);
+
+            function startHold() {
+                const amount = parseFloat(document.getElementById('userWithdrawAmount').value);
+                const method = document.querySelector('input[name="withdrawMethod"]:checked')?.value;
+                
+                if (!amount || amount < 10) {
+                    showToast('Error', 'Minimum withdrawal amount is ৳10', 'error');
+                    return;
+                }
+                
+                if (amount > currentUser.balance) {
+                    showToast('Error', 'You don\'t have sufficient balance!', 'error');
+                    return;
+                }
+                
+                if (!method) {
+                    showToast('Error', 'Please select a withdrawal method', 'error');
+                    return;
+                }
+
+                isHolding = true;
+                holdStartTime = Date.now();
+                withdrawHoldButton.classList.add('holding');
+                withdrawHoldButton.disabled = true;
+
+                holdTimer = setTimeout(() => {
+                    // Hold completed
+                    handleUserWithdraw();
+                    withdrawHoldButton.classList.remove('holding');
+                    withdrawHoldButton.disabled = false;
+                    isHolding = false;
+                }, holdDuration);
+            }
+
+            function endHold() {
+                if (!isHolding) return;
+                
+                clearTimeout(holdTimer);
+                withdrawHoldButton.classList.remove('holding');
+                withdrawHoldButton.disabled = false;
+                isHolding = false;
+                
+                const holdTime = Date.now() - holdStartTime;
+                if (holdTime < holdDuration) {
+                    showToast('Info', 'Hold longer to submit request', 'info');
+                }
+            }
+
+            function cancelHold() {
+                if (!isHolding) return;
+                
+                clearTimeout(holdTimer);
+                withdrawHoldButton.classList.remove('holding');
+                withdrawHoldButton.disabled = false;
+                isHolding = false;
+            }
         }
 
         /**
@@ -2889,8 +3361,7 @@
         }
 
         // User Deposit Handler
-        async function handleUserDeposit(e) {
-            e.preventDefault();
+        async function handleUserDeposit() {
             const amount = parseFloat(document.getElementById('userDepositAmount').value);
             const method = document.querySelector('input[name="depositMethod"]:checked')?.value;
             const transactionDetails = document.getElementById('depositDetails').value;
@@ -2902,6 +3373,8 @@
 
             if (amount > 0) {
                 try {
+                    showDBLoading();
+                    
                     const transactionsRef = collection(db, 'artifacts', appId, 'public', 'data', 'transactions');
                     const newTransaction = {
                         id: Date.now(),
@@ -2916,6 +3389,8 @@
                     };
                     await addDoc(transactionsRef, newTransaction);
                     
+                    hideDBLoading();
+                    
                     // Show success page
                     showSuccessPage('deposit', amount, method);
                     
@@ -2924,6 +3399,7 @@
                     
                 } catch (err) {
                     console.error(err);
+                    hideDBLoading();
                     showToast('Error', 'Failed to submit deposit request', 'error');
                 }
             } else {
@@ -2932,8 +3408,7 @@
         }
 
         // User Withdraw Handler
-        async function handleUserWithdraw(e) {
-            e.preventDefault();
+        async function handleUserWithdraw() {
             const amount = parseFloat(document.getElementById('userWithdrawAmount').value);
             const method = document.querySelector('input[name="withdrawMethod"]:checked')?.value;
             const transactionDetails = document.getElementById('withdrawDetails').value;
@@ -2955,6 +3430,8 @@
 
             if (amount > 0) {
                 try {
+                    showDBLoading();
+                    
                     const transactionsRef = collection(db, 'artifacts', appId, 'public', 'data', 'transactions');
                     const newTransaction = {
                         id: Date.now(),
@@ -2969,6 +3446,8 @@
                     };
                     await addDoc(transactionsRef, newTransaction);
                     
+                    hideDBLoading();
+                    
                     // Show success page
                     showSuccessPage('withdraw', amount, method);
                     
@@ -2977,6 +3456,7 @@
                     
                 } catch (err) {
                     console.error(err);
+                    hideDBLoading();
                     showToast('Error', 'Failed to submit withdrawal request', 'error');
                 }
             }
@@ -3114,9 +3594,16 @@
         window.searchRecipient = searchRecipient;
         window.selectRecipient = selectRecipient;
         window.clearRecipient = clearRecipient;
-        window.handleP2PTransfer = handleP2PTransfer;
+        window.processP2PTransfer = processP2PTransfer;
         window.validateP2PAmount = validateP2PAmount;
         window.updateSelectedRecipientUI = updateSelectedRecipientUI;
+        window.setupP2PHoldButton = setupP2PHoldButton;
+        window.setupDepositHoldButton = setupDepositHoldButton;
+        window.setupWithdrawHoldButton = setupWithdrawHoldButton;
+        window.showGreetingPage = showGreetingPage;
+        window.hideGreetingPage = hideGreetingPage;
+        window.showDBLoading = showDBLoading;
+        window.hideDBLoading = hideDBLoading;
     </script>
 </body>
 </html>
