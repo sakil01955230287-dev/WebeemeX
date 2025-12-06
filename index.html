@@ -352,8 +352,8 @@
             100% { transform: rotate(360deg); }
         }
         
-        /* P2P Transfer Styles */
-        .p2p-card {
+        /* Send Money Styles */
+        .sendmoney-card {
             background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
             color: white;
             border-radius: 16px;
@@ -480,6 +480,7 @@
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
             transform: scale(0.9);
             animation: popIn 0.5s ease-out forwards;
+            position: relative;
         }
         
         @keyframes popIn {
@@ -541,12 +542,83 @@
             border: 4px solid rgba(255, 255, 255, 0.3);
             border-radius: 50%;
             border-top-color: #4f46e5;
-            animation: spin 1s ease-in-out infinite;
-            margin-bottom: 1.5rem;
+            animation: spin 2s ease-in-out infinite;
+            margin-bottom: 1rem;
         }
         
         @keyframes spin {
             to { transform: rotate(360deg); }
+        }
+        
+        /* Locked Account Message Styles */
+        .locked-message-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 400px;
+            padding: 3rem;
+            text-align: center;
+        }
+        
+        .locked-icon {
+            width: 100px;
+            height: 100px;
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 2rem;
+            font-size: 3rem;
+            color: white;
+            animation: pulse 2s infinite;
+        }
+        
+        .locked-title {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 1rem;
+        }
+        
+        .locked-message {
+            font-size: 1.25rem;
+            color: #6b7280;
+            max-width: 600px;
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+        
+        .locked-action {
+            font-size: 1rem;
+            color: #4b5563;
+            margin-top: 1rem;
+        }
+        
+        /* Loading screen styles */
+        .loading-screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: rgba(236, 236, 236, 0.95);
+        }
+        
+        .loading-logo {
+            width: 120px;
+            height: 120px;
+            color: #6b7280;    
+            margin-bottom: 1rem;
+            animation: pulse 2s infinite;
+        }
+        
+        .loading-text {
+            color: #6b7280;
+            font-size: 1rem;
+            font-weight: 600;
+            margin-top: 0.4rem;
         }
     </style>
 </head>
@@ -588,11 +660,14 @@
     </div>
 
     <!-- Main App Container -->
-    <div id="app" class="flex-grow flex items-center justify-center p-4">
-        <!-- Content injected by JS -->
-        <div class="text-center">
-            <i class="fas fa-circle-notch fa-spin text-gray-600 text-3xl mb-3"></i>
-            <p class="text-gray-500">Connecting to Database...</p>
+    <div id="app" class="flex-grow">
+        <!-- Loading Screen with Logo -->
+        <div class="loading-screen">
+            <img src="https://i.ibb.co.com/HLmthwyB/Picsart-25-11-30-22-14-07-098.png" alt="Picsart-25-11-30-22-14-07-098" alt="WebeemeX Logo" class="loading-logo">
+            <div class="flex items-center justify-center">
+                <i class="fas fa-circle-notch fa-spin text-gray text-2xl mr-3"></i>
+                <p class="loading-text">Loading...</p>
+            </div>
         </div>
     </div>
 
@@ -624,12 +699,12 @@
         let localUsers = [];
         let localHistory = [];
         let localTransactions = [];
-        let localP2PHistory = [];
+        let localSendMoneyHistory = []; // Changed from localP2PHistory
         let currentUser = null;
         let userToDeleteId = null;
         let depositUserId = null;
         let currentView = 'dashboard'; // 'dashboard' or 'history' or 'transactions'
-        let currentUserView = 'dashboard'; // 'dashboard', 'deposit', 'withdraw', 'history', 'profile', 'p2p'
+        let currentUserView = 'dashboard'; // 'dashboard', 'deposit', 'withdraw', 'history', 'profile', 'sendmoney'
         let successTimer = null;
         let selectedRecipient = null;
         let holdTimer = null;
@@ -722,7 +797,7 @@
             const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'users');
             const historyRef = collection(db, 'artifacts', appId, 'public', 'data', 'fundHistory');
             const transactionsRef = collection(db, 'artifacts', appId, 'public', 'data', 'transactions');
-            const p2pHistoryRef = collection(db, 'artifacts', appId, 'public', 'data', 'p2pHistory');
+            const sendMoneyHistoryRef = collection(db, 'artifacts', appId, 'public', 'data', 'sendMoneyHistory'); // Changed from p2pHistory
 
             // Listener for Users
             onSnapshot(usersRef, (snapshot) => {
@@ -782,11 +857,11 @@
                 refreshUI();
             });
 
-            // Listener for P2P History
-            onSnapshot(p2pHistoryRef, (snapshot) => {
-                localP2PHistory = [];
+            // Listener for Send Money History
+            onSnapshot(sendMoneyHistoryRef, (snapshot) => {
+                localSendMoneyHistory = [];
                 snapshot.forEach((doc) => {
-                    localP2PHistory.push({ ...doc.data(), docId: doc.id });
+                    localSendMoneyHistory.push({ ...doc.data(), docId: doc.id });
                 });
                 refreshUI();
             });
@@ -896,16 +971,24 @@
         }
 
         // Show Success Greeting Page
-        function showGreetingPage(type, message, amount = 0, recipientName = '') {
+        function showGreetingPage(type, message, amount = 0, recipientName = '', autoHide = true) {
             // Remove any existing greeting page
             const existingGreeting = document.getElementById('greetingPage');
             if (existingGreeting) {
                 existingGreeting.remove();
             }
             
+            // Check if this is for send money to add cross icon
+            const isSendMoney = currentUserView === 'sendmoney' && type === 'success';
+            
             const greetingHTML = `
                 <div id="greetingPage" class="success-greeting">
                     <div class="greeting-content">
+                        ${isSendMoney ? `
+                            <button onclick="closeGreetingAndReturn()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-xl">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        ` : ''}
                         <div id="greetingIcon" class="greeting-icon">
                             ${type === 'success' ? '<i class="fas fa-check-circle"></i>' : 
                               type === 'error' ? '<i class="fas fa-times-circle"></i>' : 
@@ -920,8 +1003,7 @@
                         ${amount > 0 ? `<div class="text-3xl font-bold text-gray-800 my-4">${formatCurrency(amount)}</div>` : ''}
                         ${recipientName ? `<div class="text-lg font-semibold text-purple-600 my-2">${recipientName}</div>` : ''}
                         <div class="text-sm text-gray-500">
-                            <i class="fas fa-spinner fa-spin mr-2"></i>
-                            Updating your dashboard...
+                            ${isSendMoney ? 'Click the X button above to return to dashboard' : '<i class="fas fa-spinner fa-spin mr-2"></i> Updating your dashboard...'}
                         </div>
                     </div>
                 </div>
@@ -934,17 +1016,23 @@
                 greetingPage.classList.add('active');
             }, 10);
             
-            // Auto-hide after 3 seconds for success
-            if (type === 'success') {
+            // Only auto-hide if not send money success
+            if (type === 'success' && autoHide && !isSendMoney) {
                 setTimeout(() => {
                     hideGreetingPage();
                     // Refresh the current view
-                    if (currentUserView === 'p2p') {
+                    if (currentUserView === 'sendmoney') {
                         selectedRecipient = null;
                         renderUserPanel();
                     }
                 }, 3000);
             }
+        }
+
+        function closeGreetingAndReturn() {
+            hideGreetingPage();
+            selectedRecipient = null;
+            setUserCurrentView('dashboard');
         }
 
         function hideGreetingPage() {
@@ -984,11 +1072,11 @@
                 successTitle.textContent = 'Withdrawal Request Successfully Submitted';
                 successMessage.textContent = `Thank you for your withdrawal of ${formatCurrency(amount)} Via ${method.toUpperCase()}. The withdrawal is being reviewed by the administration and will be processed soon.`;
                 successMethod.textContent = method.toUpperCase();
-            } else if (type === 'p2p') {
+            } else if (type === 'sendmoney') {
                 successIcon.className = 'fas fa-exchange-alt';
-                successTitle.textContent = 'P2P Transfer Successful!';
-                successMessage.textContent = `Your P2P money transfer has been completed successfully.`;
-                successMethod.textContent = 'DIRECT P2P TRANSFER';
+                successTitle.textContent = 'Send Money Successful!';
+                successMessage.textContent = `Your money transfer has been completed successfully.`;
+                successMethod.textContent = 'DIRECT MONEY TRANSFER';
                 if (recipientName) {
                     successNote.innerHTML = `Transferred to: <strong>${recipientName}</strong><br>Amount: <strong>${formatCurrency(amount)}</strong><br>You will be redirected in <span id="countdown">5</span> seconds`;
                 }
@@ -1013,6 +1101,50 @@
                     setUserCurrentView('dashboard');
                 }
             }, 1000);
+        }
+
+        // Render Locked Account Message
+        function renderLockedMessage() {
+            return `
+                <div class="locked-message-container">
+                    <div class="locked-icon">
+                        <i class="fas fa-lock"></i>
+                    </div>
+                    <h2 class="locked-title">Account Locked</h2>
+                    <p class="locked-message">
+                        Dear Client! Your account has been Locked. Contact the Administration to unlock your account.
+                    </p>
+                    <div class="bg-red-50 border border-red-200 rounded-xl p-4 max-w-md">
+                        <div class="flex">
+                            <div class="flex-shrink-0">
+                                <i class="fas fa-exclamation-triangle text-red-400"></i>
+                            </div>
+                            <div class="ml-3">
+                                <h3 class="text-sm font-medium text-red-800">Restricted Features</h3>
+                                <div class="mt-2 text-sm text-red-700">
+                                    <p>You cannot use the following features while your account is locked:</p>
+                                    <ul class="list-disc pl-5 mt-2 space-y-1">
+                                        <li>Make Deposits</li>
+                                        <li>Request Withdrawals</li>
+                                        <li>Send Money to other users</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="locked-action">
+                        Please contact the administrator at <strong>admin@mizxpay.com</strong> to unlock your account.
+                    </p>
+                    <button onclick="setUserCurrentView('dashboard')" class="mt-6 bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-6 rounded-lg transition-colors">
+                        Return to Dashboard
+                    </button>
+                </div>
+            `;
+        }
+
+        // Show locked message when trying to access locked features
+        function showLockedMessage() {
+            showToast('Account Locked', 'Your account is locked. Contact administrator to unlock.', 'error');
         }
 
         function renderLogin() {
@@ -1343,7 +1475,7 @@
                     case 'bank': return 'bg-bank text-white';
                     case 'bkash': return 'bg-bkash text-white';
                     case 'nagad': return 'bg-nagad text-white';
-                    case 'p2p': return 'bg-gradient-to-r from-purple-500 to-pink-500 text-white';
+                    case 'sendmoney': return 'bg-gradient-to-r from-purple-500 to-pink-500 text-white';
                     default: return 'bg-gray-200 text-gray-700';
                 }
             }
@@ -1351,7 +1483,12 @@
             return `
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-2xl font-bold text-gray-800">Transaction History</h2>
-                    <span class="text-sm text-gray-500">Last 30 days + last 5 transactions</span>
+                    <div class="flex items-center gap-4">
+                        <span class="text-sm text-gray-500">Last 30 days + last 5 transactions</span>
+                        <button onclick="downloadAllHistory()" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium shadow transition-colors flex items-center">
+                            <i class="fas fa-download mr-2"></i> Download All
+                        </button>
+                    </div>
                 </div>
 
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -1369,15 +1506,17 @@
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100">
-                                ${combinedHistory.length > 0 ? combinedHistory.map(log => `
+                                ${combinedHistory.length > 0 ? combinedHistory.map(log => {
+                                    const displayType = log.type === 'sendmoney' ? 'Send Money' : log.type.toUpperCase();
+                                    return `
                                     <tr class="hover:bg-gray-50 transition-colors">
                                         <td class="px-6 py-4 text-sm font-medium text-gray-900">
                                             ${getUserName(log.userId)} 
                                             <span class="block text-xs text-gray-500">ID: #${log.userId}</span>
                                         </td>
                                         <td class="px-6 py-4">
-                                            <span class="px-3 py-1 text-xs rounded-full font-bold ${log.type === 'withdraw' ? 'bg-red-100 text-red-800' : log.type === 'p2p' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}">
-                                                ${log.type ? log.type.toUpperCase() : 'DEPOSIT'}
+                                            <span class="px-3 py-1 text-xs rounded-full font-bold ${log.type === 'withdraw' ? 'bg-red-100 text-red-800' : log.type === 'sendmoney' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}">
+                                                ${displayType}
                                             </span>
                                         </td>
                                         <td class="px-6 py-4">
@@ -1385,12 +1524,12 @@
                                                 ${log.method ? log.method.toUpperCase() : 'N/A'}
                                             </span>
                                         </td>
-                                        <td class="px-6 py-4 text-lg font-bold ${log.type === 'withdraw' ? 'text-red-600' : log.type === 'p2p' ? 'text-purple-600' : 'text-green-600'}">
+                                        <td class="px-6 py-4 text-lg font-bold ${log.type === 'withdraw' ? 'text-red-600' : log.type === 'sendmoney' ? 'text-purple-600' : 'text-green-600'}">
                                             ${log.type === 'withdraw' ? '-' : '+'} ${formatCurrency(log.amount)}
                                         </td>
                                         <td class="px-6 py-4 text-sm text-gray-700">
                                             ${log.transactionDetails || log.details || log.trxId || log.recipientName || 'N/A'}
-                                            ${log.type === 'p2p' && log.recipientName ? `<br><span class="text-xs text-purple-600">To: ${log.recipientName}</span>` : ''}
+                                            ${log.type === 'sendmoney' && log.recipientName ? `<br><span class="text-xs text-purple-600">To: ${log.recipientName}</span>` : ''}
                                         </td>
                                         <td class="px-6 py-4 text-xs text-gray-500">${new Date(log.timestamp).toLocaleString()}</td>
                                         <td class="px-6 py-4 relative">
@@ -1408,7 +1547,8 @@
                                             </div>
                                         </td>
                                     </tr>
-                                `).join('') : `
+                                    `;
+                                }).join('') : `
                                     <tr>
                                         <td colspan="7" class="px-6 py-8 text-center text-gray-500">
                                             <i class="fas fa-search-plus text-xl mb-2"></i>
@@ -1423,6 +1563,59 @@
             `;
         }
 
+        // Download all transaction history
+        function downloadAllHistory() {
+            try {
+                // Prepare data for download
+                const downloadData = localHistory.map(log => {
+                    const user = localUsers.find(u => u.id === log.userId);
+                    return {
+                        'Transaction ID': log.id || log.docId,
+                        'Date': new Date(log.timestamp).toLocaleString(),
+                        'User ID': log.userId,
+                        'Username': log.username || (user ? user.username : 'Unknown'),
+                        'Full Name': user ? user.fullName : 'Unknown',
+                        'Type': log.type === 'sendmoney' ? 'Send Money' : log.type.toUpperCase(),
+                        'Method': log.method ? log.method.toUpperCase() : 'N/A',
+                        'Amount': formatCurrency(log.amount),
+                        'Amount (Numeric)': log.amount,
+                        'Transaction Details': log.transactionDetails || log.details || log.trxId || 'N/A',
+                        'Recipient': log.recipientName || 'N/A',
+                        'Status': log.status || 'completed',
+                        'Approved By': log.approvedBy || 'N/A',
+                        'Timestamp': log.timestamp
+                    };
+                });
+
+                // Create CSV content
+                const headers = Object.keys(downloadData[0] || {});
+                const csvContent = [
+                    headers.join(','),
+                    ...downloadData.map(row => headers.map(header => {
+                        const cell = row[header] || '';
+                        // Escape commas and quotes in cell values
+                        return typeof cell === 'string' ? `"${cell.replace(/"/g, '""')}"` : cell;
+                    }).join(','))
+                ].join('\n');
+
+                // Create and trigger download
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', `transaction-history-${new Date().toISOString().split('T')[0]}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                showToast('Success', 'Transaction history downloaded successfully', 'success');
+            } catch (error) {
+                console.error('Error downloading history:', error);
+                showToast('Error', 'Failed to download history', 'error');
+            }
+        }
+
         function renderTransactionsPanel(transactions, users) {
             const pendingTransactions = transactions.filter(t => t.status === 'pending');
             
@@ -1433,7 +1626,7 @@
 
             const getTypeStyle = (type) => {
                 return type === 'deposit' ? 'bg-green-100 text-green-800' : 
-                       type === 'p2p' ? 'bg-purple-100 text-purple-800' : 
+                       type === 'sendmoney' ? 'bg-purple-100 text-purple-800' : 
                        'bg-red-100 text-red-800';
             }
 
@@ -1458,7 +1651,13 @@
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100">
-                                ${pendingTransactions.length > 0 ? pendingTransactions.map(transaction => `
+                                ${pendingTransactions.length > 0 ? pendingTransactions.map(transaction => {
+                                    const displayType = transaction.type === 'sendmoney' ? 'Send Money' : transaction.type.toUpperCase();
+                                    // FIXED: Properly escape and pass recipientId as null when not present
+                                    const recipientIdParam = transaction.recipientId ? transaction.recipientId : null;
+                                    const recipientNameParam = escapeString(transaction.recipientName || '');
+                                    
+                                    return `
                                     <tr class="hover:bg-gray-50 transition-colors">
                                         <td class="px-6 py-4 text-sm font-medium text-gray-900">
                                             ${getUserName(transaction.userId)} 
@@ -1466,10 +1665,10 @@
                                         </td>
                                         <td class="px-6 py-4">
                                             <span class="px-3 py-1 text-xs rounded-full font-bold ${getTypeStyle(transaction.type)}">
-                                                ${transaction.type.toUpperCase()}
+                                                ${displayType}
                                             </span>
                                         </td>
-                                        <td class="px-6 py-4 text-lg font-bold ${transaction.type === 'deposit' ? 'text-green-600' : transaction.type === 'p2p' ? 'text-purple-600' : 'text-red-600'}">
+                                        <td class="px-6 py-4 text-lg font-bold ${transaction.type === 'deposit' ? 'text-green-600' : transaction.type === 'sendmoney' ? 'text-purple-600' : 'text-red-600'}">
                                             ${transaction.type === 'deposit' ? '+' : '-'} ${formatCurrency(transaction.amount)}
                                         </td>
                                         <td class="px-6 py-4 text-sm text-gray-700">
@@ -1483,7 +1682,7 @@
                                             ${new Date(transaction.timestamp).toLocaleDateString()}
                                         </td>
                                         <td class="px-6 py-4 text-right space-x-2">
-                                            <button onclick="approveTransaction('${transaction.docId}', ${transaction.userId}, '${transaction.type}', ${transaction.amount}, '${escapeString(transaction.transactionDetails || transaction.details || '')}', '${transaction.method || ''}', '${escapeString(transaction.recipientName || '')}', ${transaction.recipientId || 'null'})" class="action-btn approve">
+                                            <button onclick="approveTransaction('${transaction.docId}', ${transaction.userId}, '${transaction.type}', ${transaction.amount}, '${escapeString(transaction.transactionDetails || transaction.details || '')}', '${transaction.method || ''}', '${recipientNameParam}', ${recipientIdParam})" class="action-btn approve">
                                                 <i class="fas fa-check"></i> Approve
                                             </button>
                                             <button onclick="rejectTransaction('${transaction.docId}')" class="action-btn reject">
@@ -1491,7 +1690,8 @@
                                             </button>
                                         </td>
                                     </tr>
-                                `).join('') : `
+                                    `;
+                                }).join('') : `
                                     <tr>
                                         <td colspan="7" class="px-6 py-8 text-center text-gray-500">
                                             <i class="fas fa-check-circle text-xl mb-2 text-green-500"></i>
@@ -1694,6 +1894,11 @@
             app.className = "w-full min-h-screen bg-gray-100 block";
             
             const dashboardButtonClass = currentUserView === 'dashboard' ? 'text-white bg-gray-700' : 'text-gray-700 hover:bg-gray-200';
+            const depositButtonClass = currentUserView === 'deposit' ? 'text-white bg-gray-700' : 'text-gray-700 hover:bg-gray-200';
+            const withdrawButtonClass = currentUserView === 'withdraw' ? 'text-white bg-gray-700' : 'text-gray-700 hover:bg-gray-200';
+            const sendmoneyButtonClass = currentUserView === 'sendmoney' ? 'text-white bg-gray-700' : 'text-gray-700 hover:bg-gray-200';
+            const historyButtonClass = currentUserView === 'history' ? 'text-white bg-gray-700' : 'text-gray-700 hover:bg-gray-200';
+            const profileButtonClass = currentUserView === 'profile' ? 'text-white bg-gray-700' : 'text-gray-700 hover:bg-gray-200';
 
             app.innerHTML = `
                 <div class="min-h-screen flex flex-col">
@@ -1720,15 +1925,46 @@
                                 <button onclick="setUserCurrentView('dashboard')" class="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${dashboardButtonClass}">
                                     <i class="fas fa-tachometer-alt mr-2"></i> Dashboard
                                 </button>
+                                ${!currentUser.isLocked ? `
+                                    <button onclick="setUserCurrentView('deposit')" class="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${depositButtonClass}">
+                                        <i class="fas fa-plus-circle mr-2"></i> Deposit
+                                    </button>
+                                    <button onclick="setUserCurrentView('withdraw')" class="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${withdrawButtonClass}">
+                                        <i class="fas fa-minus-circle mr-2"></i> Withdraw
+                                    </button>
+                                    <button onclick="setUserCurrentView('sendmoney')" class="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${sendmoneyButtonClass}">
+                                        <i class="fas fa-user-friends mr-2"></i> Send Money
+                                    </button>
+                                ` : `
+                                    <button onclick="showLockedMessage()" class="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-100 text-gray-400 cursor-not-allowed">
+                                        <i class="fas fa-plus-circle mr-2"></i> Deposit
+                                    </button>
+                                    <button onclick="showLockedMessage()" class="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-100 text-gray-400 cursor-not-allowed">
+                                        <i class="fas fa-minus-circle mr-2"></i> Withdraw
+                                    </button>
+                                    <button onclick="showLockedMessage()" class="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-100 text-gray-400 cursor-not-allowed">
+                                        <i class="fas fa-user-friends mr-2"></i> Send Money
+                                    </button>
+                                `}
+                                <button onclick="setUserCurrentView('history')" class="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${historyButtonClass}">
+                                    <i class="fas fa-history mr-2"></i> History
+                                </button>
+                                <button onclick="setUserCurrentView('profile')" class="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${profileButtonClass}">
+                                    <i class="fas fa-user-circle mr-2"></i> Profile
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     <main class="flex-grow max-w-7xl mx-auto w-full px-4 py-8 fade-in">
-                        ${currentUserView === 'dashboard' ? renderUserDashboard() : 
-                          currentUserView === 'deposit' ? renderUserDeposit() : 
-                          currentUserView === 'withdraw' ? renderUserWithdraw() : 
-                          currentUserView === 'history' ? renderUserHistory() :
-                          currentUserView === 'profile' ? renderUserProfile() :
-                          currentUserView === 'p2p' ? renderUserP2P() : ''}
+                        ${currentUser.isLocked && ['deposit', 'withdraw', 'sendmoney'].includes(currentUserView) ? 
+                            renderLockedMessage() : 
+                            currentUserView === 'dashboard' ? renderUserDashboard() : 
+                            currentUserView === 'deposit' ? renderUserDeposit() : 
+                            currentUserView === 'withdraw' ? renderUserWithdraw() : 
+                            currentUserView === 'history' ? renderUserHistory() :
+                            currentUserView === 'profile' ? renderUserProfile() :
+                            currentUserView === 'sendmoney' ? renderUserSendMoney() : ''}
                     </main>
                 </div>
             `;
@@ -1787,10 +2023,10 @@
                 }
             }
             
-            if (currentUserView === 'p2p') {
-                const p2pForm = document.getElementById('p2pTransferForm');
-                if (p2pForm) {
-                    p2pForm.addEventListener('submit', function(e) {
+            if (currentUserView === 'sendmoney') {
+                const sendMoneyForm = document.getElementById('sendMoneyTransferForm');
+                if (sendMoneyForm) {
+                    sendMoneyForm.addEventListener('submit', function(e) {
                         e.preventDefault();
                         showToast('Info', 'Please use the Hold button to transfer', 'info');
                     });
@@ -1802,10 +2038,10 @@
                     recipientInput.addEventListener('input', searchRecipient);
                 }
                 
-                // Add real-time validation for P2P amount
-                const p2pAmountInput = document.getElementById('p2pAmount');
-                if (p2pAmountInput) {
-                    p2pAmountInput.addEventListener('input', validateP2PAmount);
+                // Add real-time validation for Send Money amount
+                const sendMoneyAmountInput = document.getElementById('sendMoneyAmount');
+                if (sendMoneyAmountInput) {
+                    sendMoneyAmountInput.addEventListener('input', validateSendMoneyAmount);
                 }
                 
                 // If we have a selected recipient, update the UI to show it
@@ -1815,7 +2051,7 @@
                 
                 // Set up hold-to-pay button
                 setTimeout(() => {
-                    setupP2PHoldButton();
+                    setupSendMoneyHoldButton();
                 }, 100);
             }
         }
@@ -1858,7 +2094,7 @@
                 }
                 
                 // Show the hold button section
-                const holdButtonSection = document.querySelector('#p2pHoldButtonSection');
+                const holdButtonSection = document.querySelector('#sendMoneyHoldButtonSection');
                 if (holdButtonSection) {
                     holdButtonSection.classList.remove('hidden');
                 }
@@ -1870,6 +2106,7 @@
                                    currentUser.accountType === 'standard' ? 'Standard User' : 'Normal User';
             const accountTypeColor = currentUser.accountType === 'vip' ? 'text-purple-600' : 
                                     currentUser.accountType === 'standard' ? 'text-blue-600' : 'text-gray-600';
+            const isLocked = currentUser.isLocked;
 
             return `
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-6 flex items-center space-x-4">
@@ -1907,21 +2144,21 @@
                         <div class="text-gray-400 mb-2"><i class="fas fa-credit-card text-2xl"></i></div>
                         <p class="text-xs text-gray-500 uppercase">Quick Actions</p>
                         <div class="mt-4 space-y-3">
-                            <button onclick="setUserCurrentView('deposit')" class="w-full bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded-lg transition-colors">
-                                <i class="fas fa-plus-circle mr-2"></i> Make Deposit
+                            <button onclick="${isLocked ? 'showLockedMessage()' : 'setUserCurrentView(\'deposit\')'}" class="w-full ${isLocked ? 'bg-gray-300 cursor-not-allowed' : 'bg-gray-600 hover:bg-gray-700'} text-white font-medium py-2 px-4 rounded-lg transition-colors">
+                                <i class="fas fa-plus-circle mr-2"></i> ${isLocked ? 'Deposit (Locked)' : 'Make Deposit'}
                             </button>
-                            <button onclick="setUserCurrentView('withdraw')" class="w-full bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 font-medium py-2 px-4 rounded-lg transition-colors">
-                                <i class="fas fa-minus-circle mr-2"></i> Request Withdrawal
+                            <button onclick="${isLocked ? 'showLockedMessage()' : 'setUserCurrentView(\'withdraw\')'}" class="w-full ${isLocked ? 'bg-gray-100 cursor-not-allowed' : 'bg-white hover:bg-gray-50'} ${isLocked ? '' : 'border border-gray-300'} text-gray-700 font-medium py-2 px-4 rounded-lg transition-colors">
+                                <i class="fas fa-minus-circle mr-2"></i> ${isLocked ? 'Withdraw (Locked)' : 'Request Withdrawal'}
                             </button>
                         </div>
                     </div>
                     
                     <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
                         <div class="text-gray-400 mb-2"><i class="fas fa-exchange-alt text-2xl"></i></div>
-                        <p class="text-xs text-gray-500 uppercase">P2P Transfer</p>
+                        <p class="text-xs text-gray-500 uppercase">Send Money</p>
                         <div class="mt-4">
-                            <button onclick="setUserCurrentView('p2p')" class="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-medium py-2 px-4 rounded-lg transition-colors">
-                                <i class="fas fa-user-friends mr-2"></i> Send Money
+                            <button onclick="${isLocked ? 'showLockedMessage()' : 'setUserCurrentView(\'sendmoney\')'}" class="w-full ${isLocked ? 'bg-gradient-to-r from-purple-300 to-pink-300 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700'} text-white font-medium py-2 px-4 rounded-lg transition-colors">
+                                <i class="fas fa-user-friends mr-2"></i> ${isLocked ? 'Send Money (Locked)' : 'Send Money'}
                             </button>
                         </div>
                     </div>
@@ -1940,6 +2177,23 @@
                     </div>
                 </div>
 
+                ${isLocked ? `
+                    <div class="mt-8 bg-red-50 border border-red-200 rounded-xl p-4">
+                        <div class="flex">
+                            <div class="flex-shrink-0">
+                                <i class="fas fa-exclamation-triangle text-red-400"></i>
+                            </div>
+                            <div class="ml-3">
+                                <h3 class="text-sm font-medium text-red-800">Account Locked</h3>
+                                <div class="mt-2 text-sm text-red-700">
+                                    <p>Your account is currently locked. You cannot use Deposit, Withdrawal, or Send Money features.</p>
+                                    <p class="mt-1">Please contact the administrator at <strong>admin@mizxpay.com</strong> to unlock your account.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                ` : ''}
+
                 <div class="mt-8 text-center text-gray-400 text-xs">
                     <button onclick="setUserCurrentView('profile')" class="text-blue-500 hover:text-blue-600 hover:underline">
                         <i class="fas fa-user-circle mr-1"></i> Click on your profile picture or go to Profile page to see your account details
@@ -1948,15 +2202,15 @@
             `;
         }
 
-        function renderUserP2P() {
+        function renderUserSendMoney() {
             return `
-                <div class="p2p-card">
+                <div class="sendmoney-card">
                     <div class="flex items-center mb-4">
                         <div class="h-12 w-12 bg-white/20 rounded-full flex items-center justify-center mr-3">
                             <i class="fas fa-user-friends text-xl"></i>
                         </div>
                         <div>
-                            <h2 class="text-2xl font-bold">Direct P2P Money Transfer</h2>
+                            <h2 class="text-2xl font-bold">Direct Money Transfer</h2>
                             <p class="text-white/80">Send money to other users instantly (No admin approval needed)</p>
                         </div>
                     </div>
@@ -1993,7 +2247,7 @@
 
                         <!-- Transfer Form -->
                         <div>
-                            <form id="p2pTransferForm" class="space-y-6">
+                            <form id="sendMoneyTransferForm" class="space-y-6">
                                 <div id="recipientSection">
                                     <label class="block text-sm font-medium text-gray-700 mb-2">Recipient Username</label>
                                     ${!selectedRecipient ? `
@@ -2028,16 +2282,16 @@
                                 
                                 <div id="amountSection" ${!selectedRecipient ? 'class="hidden"' : ''}>
                                     <label class="block text-sm font-medium text-gray-700 mb-2">Transfer Amount</label>
-                                    <input type="number" id="p2pAmount" min="10" step="0.01" max="${currentUser.balance}" class="w-full p-3 rounded-lg border border-gray-200 focus:ring-2 focus:ring-purple-500 outline-none" placeholder="Minimum: ৳10" required>
+                                    <input type="number" id="sendMoneyAmount" min="10" step="0.01" max="${currentUser.balance}" class="w-full p-3 rounded-lg border border-gray-200 focus:ring-2 focus:ring-purple-500 outline-none" placeholder="Minimum: ৳10" required>
                                     <p class="text-xs text-gray-500 mt-1">Maximum transfer: ${formatCurrency(currentUser.balance)}</p>
-                                    <div id="p2pAmountValidation" class="amount-validation hidden">
-                                        <i class="fas mr-1"></i> <span id="p2pAmountMessage"></span>
+                                    <div id="sendMoneyAmountValidation" class="amount-validation hidden">
+                                        <i class="fas mr-1"></i> <span id="sendMoneyAmountMessage"></span>
                                     </div>
                                 </div>
                                 
                                 <div id="noteSection" ${!selectedRecipient ? 'class="hidden"' : ''}>
                                     <label class="block text-sm font-medium text-gray-700 mb-2">Reference Note (Optional)</label>
-                                    <textarea id="p2pNote" class="w-full p-3 rounded-lg border border-gray-200 focus:ring-2 focus:ring-purple-500 outline-none" placeholder="Add a note for the recipient" rows="2"></textarea>
+                                    <textarea id="sendMoneyNote" class="w-full p-3 rounded-lg border border-gray-200 focus:ring-2 focus:ring-purple-500 outline-none" placeholder="Add a note for the recipient" rows="2"></textarea>
                                 </div>
                                 
                                 <div id="infoSection" ${!selectedRecipient ? 'class="hidden"' : ''}>
@@ -2057,8 +2311,8 @@
                                     </div>
                                 </div>
                                 
-                                <div id="p2pHoldButtonSection" ${!selectedRecipient ? 'class="hidden"' : ''}>
-                                    <button type="button" id="p2pHoldButton" class="hold-to-pay-btn w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 rounded-lg shadow-md transition-all relative">
+                                <div id="sendMoneyHoldButtonSection" ${!selectedRecipient ? 'class="hidden"' : ''}>
+                                    <button type="button" id="sendMoneyHoldButton" class="hold-to-pay-btn w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 rounded-lg shadow-md transition-all relative">
                                         <div class="hold-progress"></div>
                                         <div class="btn-content">
                                             <i class="fas fa-hand-holding"></i>
@@ -2072,24 +2326,24 @@
                     </div>
                 </div>
                 
-                <!-- P2P Transfer History -->
+                <!-- Send Money Transfer History -->
                 <div class="mt-8">
-                    <h3 class="text-xl font-bold text-gray-800 mb-4">P2P Transfer History</h3>
-                    ${renderP2PHistory()}
+                    <h3 class="text-xl font-bold text-gray-800 mb-4">Send Money History</h3>
+                    ${renderSendMoneyHistory()}
                 </div>
             `;
         }
 
-        function validateP2PAmount() {
-            const amountInput = document.getElementById('p2pAmount');
-            const validationDiv = document.getElementById('p2pAmountValidation');
+        function validateSendMoneyAmount() {
+            const amountInput = document.getElementById('sendMoneyAmount');
+            const validationDiv = document.getElementById('sendMoneyAmountValidation');
             const amount = parseFloat(amountInput.value);
             
             if (!amount || amount < 10) {
                 validationDiv.classList.remove('hidden');
                 validationDiv.classList.remove('valid');
                 validationDiv.classList.add('invalid');
-                document.getElementById('p2pAmountMessage').textContent = 'Minimum transfer amount is ৳10';
+                document.getElementById('sendMoneyAmountMessage').textContent = 'Minimum transfer amount is ৳10';
                 amountInput.classList.add('border-red-500');
                 amountInput.classList.remove('border-green-500', 'border-gray-200');
                 return false;
@@ -2097,7 +2351,7 @@
                 validationDiv.classList.remove('hidden');
                 validationDiv.classList.remove('valid');
                 validationDiv.classList.add('invalid');
-                document.getElementById('p2pAmountMessage').textContent = 'You don\'t have sufficient balance';
+                document.getElementById('sendMoneyAmountMessage').textContent = 'You don\'t have sufficient balance';
                 amountInput.classList.add('border-red-500');
                 amountInput.classList.remove('border-green-500', 'border-gray-200');
                 return false;
@@ -2105,26 +2359,26 @@
                 validationDiv.classList.remove('hidden');
                 validationDiv.classList.remove('invalid');
                 validationDiv.classList.add('valid');
-                document.getElementById('p2pAmountMessage').textContent = 'Amount is valid for transfer';
+                document.getElementById('sendMoneyAmountMessage').textContent = 'Amount is valid for transfer';
                 amountInput.classList.remove('border-red-500');
                 amountInput.classList.add('border-green-500');
                 return true;
             }
         }
 
-        function renderP2PHistory() {
-            // Get user's P2P transactions from P2P history
-            const userP2PHistory = localP2PHistory
+        function renderSendMoneyHistory() {
+            // Get user's Send Money transactions from Send Money history
+            const userSendMoneyHistory = localSendMoneyHistory
                 .filter(log => (log.userId === currentUser.id || log.recipientId === currentUser.id))
                 .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
                 .slice(0, 10);
 
-            if (userP2PHistory.length === 0) {
+            if (userSendMoneyHistory.length === 0) {
                 return `
                     <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                         <div class="p-8 text-center text-gray-500">
                             <i class="fas fa-user-friends text-xl mb-2 text-purple-500"></i>
-                            <p>No P2P transactions found.</p>
+                            <p>No Send Money transactions found.</p>
                         </div>
                     </div>
                 `;
@@ -2145,7 +2399,7 @@
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100">
-                                ${userP2PHistory.map(log => {
+                                ${userSendMoneyHistory.map(log => {
                                     const isSender = log.userId === currentUser.id;
                                     const amountColor = isSender ? 'text-red-600' : 'text-green-600';
                                     const amountPrefix = isSender ? '-' : '+';
@@ -2247,7 +2501,7 @@
                 if (resultsDiv) resultsDiv.innerHTML = '';
                 
                 // Focus on amount input
-                const amountInput = document.getElementById('p2pAmount');
+                const amountInput = document.getElementById('sendMoneyAmount');
                 if (amountInput) {
                     amountInput.focus();
                 }
@@ -2256,43 +2510,43 @@
 
         function clearRecipient() {
             selectedRecipient = null;
-            renderUserP2P();
+            renderUserSendMoney();
         }
 
-        // Setup P2P Hold Button
-        function setupP2PHoldButton() {
-            const p2pHoldButton = document.getElementById('p2pHoldButton');
-            if (!p2pHoldButton) return;
+        // Setup Send Money Hold Button
+        function setupSendMoneyHoldButton() {
+            const sendMoneyHoldButton = document.getElementById('sendMoneyHoldButton');
+            if (!sendMoneyHoldButton) return;
 
             let holdStartTime = null;
             const holdDuration = 2000; // 2 seconds
 
-            p2pHoldButton.addEventListener('mousedown', startHold);
-            p2pHoldButton.addEventListener('mouseup', endHold);
-            p2pHoldButton.addEventListener('mouseleave', cancelHold);
-            p2pHoldButton.addEventListener('touchstart', (e) => {
+            sendMoneyHoldButton.addEventListener('mousedown', startHold);
+            sendMoneyHoldButton.addEventListener('mouseup', endHold);
+            sendMoneyHoldButton.addEventListener('mouseleave', cancelHold);
+            sendMoneyHoldButton.addEventListener('touchstart', (e) => {
                 e.preventDefault();
                 startHold();
             });
-            p2pHoldButton.addEventListener('touchend', endHold);
-            p2pHoldButton.addEventListener('touchcancel', cancelHold);
+            sendMoneyHoldButton.addEventListener('touchend', endHold);
+            sendMoneyHoldButton.addEventListener('touchcancel', cancelHold);
 
             function startHold() {
-                if (!validateP2PAmount()) {
+                if (!validateSendMoneyAmount()) {
                     showToast('Error', 'Please enter a valid amount', 'error');
                     return;
                 }
 
                 isHolding = true;
                 holdStartTime = Date.now();
-                p2pHoldButton.classList.add('holding');
-                p2pHoldButton.disabled = true;
+                sendMoneyHoldButton.classList.add('holding');
+                sendMoneyHoldButton.disabled = true;
 
                 holdTimer = setTimeout(() => {
                     // Hold completed
-                    processP2PTransfer();
-                    p2pHoldButton.classList.remove('holding');
-                    p2pHoldButton.disabled = false;
+                    processSendMoneyTransfer();
+                    sendMoneyHoldButton.classList.remove('holding');
+                    sendMoneyHoldButton.disabled = false;
                     isHolding = false;
                 }, holdDuration);
             }
@@ -2301,8 +2555,8 @@
                 if (!isHolding) return;
                 
                 clearTimeout(holdTimer);
-                p2pHoldButton.classList.remove('holding');
-                p2pHoldButton.disabled = false;
+                sendMoneyHoldButton.classList.remove('holding');
+                sendMoneyHoldButton.disabled = false;
                 isHolding = false;
                 
                 const holdTime = Date.now() - holdStartTime;
@@ -2315,21 +2569,27 @@
                 if (!isHolding) return;
                 
                 clearTimeout(holdTimer);
-                p2pHoldButton.classList.remove('holding');
-                p2pHoldButton.disabled = false;
+                sendMoneyHoldButton.classList.remove('holding');
+                sendMoneyHoldButton.disabled = false;
                 isHolding = false;
             }
         }
 
-        // Process P2P Transfer after hold
-        async function processP2PTransfer() {
+        // Process Send Money Transfer after hold
+        async function processSendMoneyTransfer() {
             if (!selectedRecipient) {
                 showToast('Error', 'Please select a recipient', 'error');
                 return;
             }
             
-            const amount = parseFloat(document.getElementById('p2pAmount').value);
-            const note = document.getElementById('p2pNote').value;
+            // FIXED: Check if user account is locked
+            if (currentUser.isLocked) {
+                showToast('Account Locked', 'Your account is locked. You cannot send money.', 'error');
+                return;
+            }
+            
+            const amount = parseFloat(document.getElementById('sendMoneyAmount').value);
+            const note = document.getElementById('sendMoneyNote').value;
             
             // Validate minimum amount
             if (amount < 10) {
@@ -2350,7 +2610,7 @@
             try {
                 // Show loading and greeting page
                 showDBLoading();
-                showGreetingPage('processing', 'Processing your P2P transfer...', amount);
+                showGreetingPage('processing', 'Processing your money transfer...', amount);
                 
                 // Get document IDs for both users
                 const senderDocId = getFirestoreDocId(currentUser.id);
@@ -2375,8 +2635,8 @@
                     balance: selectedRecipient.balance + amount 
                 });
                 
-                // Record the transaction in P2P history
-                const p2pRef = collection(db, 'artifacts', appId, 'public', 'data', 'p2pHistory');
+                // Record the transaction in Send Money history
+                const sendMoneyRef = collection(db, 'artifacts', appId, 'public', 'data', 'sendMoneyHistory');
                 
                 // Record for sender
                 const senderHistory = {
@@ -2388,11 +2648,11 @@
                     recipientName: selectedRecipient.fullName,
                     amount: amount,
                     type: 'sent',
-                    note: note || 'P2P Transfer',
+                    note: note || 'Send Money Transfer',
                     timestamp: new Date().toISOString(),
                     status: 'completed'
                 };
-                await addDoc(p2pRef, senderHistory);
+                await addDoc(sendMoneyRef, senderHistory);
                 
                 // Record for recipient
                 const recipientHistory = {
@@ -2404,29 +2664,27 @@
                     senderName: currentUser.fullName,
                     amount: amount,
                     type: 'received',
-                    note: note || 'P2P Transfer Received',
+                    note: note || 'Send Money Transfer Received',
                     timestamp: new Date().toISOString(),
                     status: 'completed'
                 };
-                await addDoc(p2pRef, recipientHistory);
+                await addDoc(sendMoneyRef, recipientHistory);
                 
                 // Hide loading and show success
                 hideDBLoading();
-                showGreetingPage('success', `৳${amount} transferred successfully`, amount, selectedRecipient.fullName);
+                showGreetingPage('success', `৳${amount} transferred successfully`, amount, selectedRecipient.fullName, false);
                 
                 // Show success toast
                 showToast('Success', `৳${amount} transferred to ${selectedRecipient.fullName}`, 'success');
                 
-                // Reset form after delay (handled by greeting page timeout)
-                
             } catch (err) {
-                console.error('P2P transfer error:', err);
+                console.error('Send Money transfer error:', err);
                 hideDBLoading();
                 showGreetingPage('error', 'Failed to process transfer. Please try again.');
                 setTimeout(() => {
                     hideGreetingPage();
                 }, 3000);
-                showToast('Error', 'Failed to process P2P transfer', 'error');
+                showToast('Error', 'Failed to process Send Money transfer', 'error');
             }
         }
 
@@ -2861,9 +3119,9 @@
         }
 
         function renderUserHistory() {
-            // Get user's NON-P2P transactions from history (deposits and withdrawals only)
+            // Get user's NON-Send Money transactions from history (deposits and withdrawals only)
             const userHistory = localHistory
-                .filter(log => log.userId === currentUser.id && log.type !== 'p2p')
+                .filter(log => log.userId === currentUser.id && log.type !== 'sendmoney')
                 .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
                 .slice(0, 10);
 
@@ -2888,7 +3146,7 @@
             return `
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
                     <h2 class="text-2xl font-bold text-gray-800 mb-2">Deposit/Withdrawal History</h2>
-                    <p class="text-gray-600 mb-6">Your deposit and withdrawal transactions (P2P transfers are shown separately)</p>
+                    <p class="text-gray-600 mb-6">Your deposit and withdrawal transactions (Send Money transfers are shown separately)</p>
                     
                     <div class="overflow-x-auto">
                         <table class="w-full text-left border-collapse">
@@ -2957,7 +3215,7 @@
                         <div class="flex items-center">
                             <i class="fas fa-info-circle text-blue-500 mr-2"></i>
                             <p class="text-sm text-blue-700">
-                                <strong>Note:</strong> P2P transfers are shown in the P2P Transfer History section, not here.
+                                <strong>Note:</strong> Send Money transfers are shown in the Send Money History section, not here.
                             </p>
                         </div>
                     </div>
@@ -3122,13 +3380,15 @@
             const foundUser = localUsers.find(u => u.username === userIn && u.password === passIn);
 
             if (foundUser) {
+                // FIXED: Allow locked users to login but show a warning
+                currentUser = foundUser;
+                currentView = 'dashboard';
+                currentUserView = 'dashboard';
+                refreshUI();
+                
                 if (foundUser.isLocked) {
-                    showToast('Access Denied', 'Your account has been locked. Please contact the administrator.', 'error');
+                    showToast('Account Locked', 'Your account is locked. You cannot use Deposit, Withdraw, or Send Money features.', 'error');
                 } else {
-                    currentUser = foundUser;
-                    currentView = 'dashboard';
-                    currentUserView = 'dashboard';
-                    refreshUI();
                     showToast('Welcome Back', `Logged in as ${currentUser.fullName}`, 'success');
                 }
             } else {
@@ -3362,6 +3622,12 @@
 
         // User Deposit Handler
         async function handleUserDeposit() {
+            // FIXED: Check if user account is locked
+            if (currentUser.isLocked) {
+                showToast('Account Locked', 'Your account is locked. You cannot make deposits.', 'error');
+                return;
+            }
+            
             const amount = parseFloat(document.getElementById('userDepositAmount').value);
             const method = document.querySelector('input[name="depositMethod"]:checked')?.value;
             const transactionDetails = document.getElementById('depositDetails').value;
@@ -3409,6 +3675,12 @@
 
         // User Withdraw Handler
         async function handleUserWithdraw() {
+            // FIXED: Check if user account is locked
+            if (currentUser.isLocked) {
+                showToast('Account Locked', 'Your account is locked. You cannot make withdrawals.', 'error');
+                return;
+            }
+            
             const amount = parseFloat(document.getElementById('userWithdrawAmount').value);
             const method = document.querySelector('input[name="withdrawMethod"]:checked')?.value;
             const transactionDetails = document.getElementById('withdrawDetails').value;
@@ -3462,9 +3734,11 @@
             }
         }
 
-        // Admin Transaction Approval
+        // Admin Transaction Approval - FIXED FUNCTION
         async function approveTransaction(transactionId, userId, type, amount, transactionDetails, method, recipientName = '', recipientId = null) {
             try {
+                console.log('Approving transaction:', { transactionId, userId, type, amount, method, recipientId });
+                
                 // Update transaction status
                 const transactionRef = doc(db, 'artifacts', appId, 'public', 'data', 'transactions', transactionId);
                 await updateDoc(transactionRef, { 
@@ -3484,7 +3758,7 @@
                         await updateDoc(userRef, { balance: user.balance + amount });
                     } else if (type === 'withdraw') {
                         await updateDoc(userRef, { balance: user.balance - amount });
-                    } else if (type === 'p2p' && recipientId) {
+                    } else if (type === 'sendmoney' && recipientId) {
                         // Deduct from sender
                         await updateDoc(userRef, { balance: user.balance - amount });
                         
@@ -3513,8 +3787,8 @@
                     status: 'approved'
                 };
                 
-                // Add recipient info for P2P transfers
-                if (type === 'p2p' && recipientId) {
+                // Add recipient info for Send Money transfers
+                if (type === 'sendmoney' && recipientId) {
                     newHistory.recipientId = recipientId;
                     newHistory.recipientName = recipientName;
                     newHistory.status = 'completed';
@@ -3594,16 +3868,20 @@
         window.searchRecipient = searchRecipient;
         window.selectRecipient = selectRecipient;
         window.clearRecipient = clearRecipient;
-        window.processP2PTransfer = processP2PTransfer;
-        window.validateP2PAmount = validateP2PAmount;
+        window.processSendMoneyTransfer = processSendMoneyTransfer;
+        window.validateSendMoneyAmount = validateSendMoneyAmount;
         window.updateSelectedRecipientUI = updateSelectedRecipientUI;
-        window.setupP2PHoldButton = setupP2PHoldButton;
+        window.setupSendMoneyHoldButton = setupSendMoneyHoldButton;
         window.setupDepositHoldButton = setupDepositHoldButton;
         window.setupWithdrawHoldButton = setupWithdrawHoldButton;
         window.showGreetingPage = showGreetingPage;
         window.hideGreetingPage = hideGreetingPage;
         window.showDBLoading = showDBLoading;
         window.hideDBLoading = hideDBLoading;
+        window.renderLockedMessage = renderLockedMessage;
+        window.closeGreetingAndReturn = closeGreetingAndReturn;
+        window.showLockedMessage = showLockedMessage;
+        window.downloadAllHistory = downloadAllHistory;
     </script>
 </body>
 </html>
