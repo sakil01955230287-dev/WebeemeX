@@ -684,7 +684,7 @@
                 <!-- LOGO HERE - Replaced bee icon with your PNG -->
                 <img src="https://i.ibb.co/mFF6tP6z/Black-Bee.png" alt="Black Bee Logo" class="logo-image loading-logo">
                 <h1 class="text-2xl font-bold mb-2">WebeemeX</h1>
-                <p class="text-gray-400 mb-6">Developed By MR. MIRROR</p>
+                <p class="text-gray-400 mb-6">Digital Payment Solution</p>
                 <div class="flex items-center">
                     <div class="w-4 h-4 bg-yellow-500 rounded-full animate-pulse mr-2"></div>
                     <p class="text-gray-400">Loading...</p>
@@ -5305,14 +5305,31 @@
                 
                 if (pendingMessage) {
                     const msgRef = doc(db, 'artifacts', appId, 'public', 'data', 'inboxMessages', pendingMessage.docId);
+                    
                     await updateDoc(msgRef, {
                         title: 'Loan Request Rejected',
-                        message: `We regret to inform you that your loan request of ${formatCurrency(loan.amount)} was rejected.`,
+                        message: `Your loan request of ${formatCurrency(loan.amount)} has been rejected.`,
                         status: 'rejected',
                         rejectionReason: reason,
                         isRead: false
                     });
                 }
+                
+                // Record in history
+                const historyRef = collection(db, 'artifacts', appId, 'public', 'data', 'fundHistory');
+                await addDoc(historyRef, {
+                    id: Date.now(),
+                    userId: loan.userId,
+                    username: loan.username,
+                    amount: loan.amount,
+                    type: 'loan',
+                    method: 'loan_rejection',
+                    transactionDetails: `Loan rejected: ${reason}`,
+                    timestamp: new Date().toISOString(),
+                    rejectedBy: currentUser.username,
+                    status: 'rejected',
+                    rejectionReason: reason
+                });
                 
                 hideDBLoading();
                 closeRejectLoanModal();
@@ -5325,14 +5342,407 @@
             }
         }
 
-        // Export functions to global scope for HTML onclick handlers
+        // FIXED: ADDED THE MISSING handleEditUser FUNCTION
+        async function handleEditUser(e) {
+            e.preventDefault();
+            
+            const userId = parseInt(document.getElementById('editUserId').value);
+            const fullName = document.getElementById('editUserFullName').value;
+            const userType = document.getElementById('editUserType').value;
+            const email = document.getElementById('editUserEmail').value;
+            const phone = document.getElementById('editUserPhone').value;
+            const address = document.getElementById('editUserAddress').value;
+            const profilePicture = document.getElementById('editUserProfilePicture').value;
+            const bkashAccount = document.getElementById('editUserBkashAccount').value;
+            const bankName = document.getElementById('editUserBankName').value;
+            const bankAccount = document.getElementById('editUserBankAccount').value;
+            
+            try {
+                showDBLoading();
+                
+                const userDocId = getFirestoreDocId(userId);
+                if (!userDocId) {
+                    throw new Error('User document not found');
+                }
+                
+                const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', userDocId);
+                await updateDoc(userRef, {
+                    fullName,
+                    userType,
+                    email,
+                    phone,
+                    address,
+                    profilePicture,
+                    bkashAccount,
+                    bankName,
+                    bankAccount
+                });
+                
+                hideDBLoading();
+                closeEditUserModal();
+                showToast('Success', 'User updated successfully', 'success');
+                
+            } catch (error) {
+                console.error('Edit user error:', error);
+                hideDBLoading();
+                showToast('Error', 'Failed to update user', 'error');
+            }
+        }
+
+        async function handleCreateUser(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const userData = {
+                id: Date.now(),
+                username: formData.get('username'),
+                password: formData.get('password'),
+                role: 'user',
+                balance: parseFloat(formData.get('balance')),
+                isLocked: false,
+                fullName: formData.get('fullName'),
+                email: '',
+                phone: '',
+                address: '',
+                accountType: 'normal',
+                userType: formData.get('userType'),
+                createdAt: new Date().toISOString(),
+                loanAmount: 0,
+                loanActive: false,
+                profilePicture: '',
+                bkashAccount: formData.get('bkashAccount') || '',
+                bankName: formData.get('bankName') || '',
+                bankAccount: formData.get('bankAccount') || ''
+            };
+            
+            try {
+                showDBLoading();
+                
+                const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'users');
+                await addDoc(usersRef, userData);
+                
+                hideDBLoading();
+                closeCreateUserModal();
+                showToast('Success', 'User created successfully', 'success');
+                e.target.reset();
+                
+            } catch (error) {
+                console.error('Create user error:', error);
+                hideDBLoading();
+                showToast('Error', 'Failed to create user', 'error');
+            }
+        }
+
+        async function handleAdminDeposit(e) {
+            e.preventDefault();
+            
+            const userId = parseInt(document.getElementById('depositUserId').value);
+            const amount = parseFloat(document.getElementById('adminDepositAmount').value);
+            const method = document.getElementById('adminDepositMethod').value;
+            const trxId = document.getElementById('adminDepositTrxId').value;
+            
+            try {
+                showDBLoading();
+                
+                const user = localUsers.find(u => u.id === userId);
+                if (!user) {
+                    throw new Error('User not found');
+                }
+                
+                const userDocId = getFirestoreDocId(userId);
+                const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', userDocId);
+                await updateDoc(userRef, {
+                    balance: user.balance + amount
+                });
+                
+                const historyRef = collection(db, 'artifacts', appId, 'public', 'data', 'fundHistory');
+                await addDoc(historyRef, {
+                    id: Date.now(),
+                    userId: userId,
+                    username: user.username,
+                    amount: amount,
+                    type: 'deposit',
+                    method: method,
+                    transactionDetails: `Admin deposit via ${method}, Transaction ID: ${trxId}`,
+                    timestamp: new Date().toISOString(),
+                    status: 'approved',
+                    approvedBy: currentUser.username
+                });
+                
+                // Create inbox message for user
+                const inboxRef = collection(db, 'artifacts', appId, 'public', 'data', 'inboxMessages');
+                const expiresAt = new Date();
+                expiresAt.setDate(expiresAt.getDate() + 3);
+                
+                await addDoc(inboxRef, {
+                    userId: userId,
+                    title: 'Deposit Approved',
+                    message: `Admin has approved your deposit of ${formatCurrency(amount)} via ${method}.`,
+                    status: 'successful',
+                    type: 'deposit',
+                    isRead: false,
+                    timestamp: new Date().toISOString(),
+                    expiresAt: expiresAt.toISOString(),
+                    approvalReason: 'Admin approved deposit'
+                });
+                
+                hideDBLoading();
+                closeDepositModal();
+                showToast('Success', `Deposited ${formatCurrency(amount)} to user`, 'success');
+                e.target.reset();
+                
+            } catch (error) {
+                console.error('Admin deposit error:', error);
+                hideDBLoading();
+                showToast('Error', 'Failed to process deposit', 'error');
+            }
+        }
+
+        async function confirmDeleteUser() {
+            const userId = window.deleteUserId;
+            
+            try {
+                showDBLoading();
+                
+                const userDocId = getFirestoreDocId(userId);
+                if (!userDocId) {
+                    throw new Error('User document not found');
+                }
+                
+                const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', userDocId);
+                await deleteDoc(userRef);
+                
+                hideDBLoading();
+                closeDeleteUserModal();
+                showToast('Success', 'User deleted successfully', 'success');
+                
+            } catch (error) {
+                console.error('Delete user error:', error);
+                hideDBLoading();
+                showToast('Error', 'Failed to delete user', 'error');
+            }
+        }
+
+        async function toggleUserLock(userId) {
+            const user = localUsers.find(u => u.id === userId);
+            if (!user) return;
+            
+            try {
+                showDBLoading();
+                
+                const userDocId = getFirestoreDocId(userId);
+                const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', userDocId);
+                await updateDoc(userRef, {
+                    isLocked: !user.isLocked
+                });
+                
+                hideDBLoading();
+                showToast('Success', `User ${!user.isLocked ? 'locked' : 'unlocked'}`, 'success');
+                
+            } catch (error) {
+                console.error('Toggle user lock error:', error);
+                hideDBLoading();
+                showToast('Error', 'Failed to update user status', 'error');
+            }
+        }
+
+        // Profile Functions
+        function toggleProfileEditMode(edit) {
+            isEditingProfile = edit;
+            renderUserPanel();
+        }
+
+        async function saveProfile() {
+            const phone = document.getElementById('editPhone').value;
+            const email = document.getElementById('editEmail').value;
+            const address = document.getElementById('editAddress').value;
+            const profilePicture = document.getElementById('editProfilePicture')?.value || '';
+            
+            try {
+                showDBLoading();
+                
+                const userDocId = getFirestoreDocId(currentUser.id);
+                const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', userDocId);
+                
+                await updateDoc(userRef, {
+                    phone,
+                    email,
+                    address,
+                    profilePicture: currentUser.userType === 'vip' ? profilePicture : currentUser.profilePicture
+                });
+                
+                hideDBLoading();
+                toggleProfileEditMode(false);
+                showToast('Success', 'Profile updated successfully', 'success');
+                
+            } catch (error) {
+                console.error('Save profile error:', error);
+                hideDBLoading();
+                showToast('Error', 'Failed to update profile', 'error');
+            }
+        }
+
+        // Send Money Functions
+        function searchRecipient() {
+            const searchTerm = document.getElementById('recipientUsername').value.toLowerCase();
+            const resultsDiv = document.getElementById('recipientResults');
+            
+            if (!searchTerm) {
+                resultsDiv.innerHTML = '';
+                return;
+            }
+            
+            const filteredUsers = localUsers.filter(u => 
+                u.role !== 'admin' && 
+                u.id !== currentUser.id &&
+                (u.username.toLowerCase().includes(searchTerm) || u.fullName.toLowerCase().includes(searchTerm))
+            ).slice(0, 5);
+            
+            resultsDiv.innerHTML = filteredUsers.map(user => `
+                <div class="p-3 border border-gray-800 rounded-xl cursor-pointer hover:bg-gray-800/50" onclick="selectUser(${user.id})">
+                    <div class="flex items-center">
+                        <div class="w-8 h-8 bg-gray-800 rounded-full flex items-center justify-center mr-3">
+                            <span class="font-bold text-sm">${user.fullName.charAt(0)}</span>
+                        </div>
+                        <div>
+                            <p class="font-medium">${user.fullName}</p>
+                            <p class="text-sm text-gray-400">@${user.username}</p>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function selectUser(userId) {
+            selectedRecipient = localUsers.find(u => u.id === userId);
+            renderUserPanel();
+        }
+
+        function clearRecipient() {
+            selectedRecipient = null;
+            renderUserPanel();
+        }
+
+        async function handleSendMoney() {
+            if (!selectedRecipient) {
+                showToast('Error', 'Please select a recipient', 'error');
+                return;
+            }
+            
+            const amount = parseFloat(document.getElementById('sendMoneyAmount').value);
+            
+            if (!amount || amount < 10) {
+                showToast('Error', 'Minimum amount is $10', 'error');
+                return;
+            }
+            
+            if (amount > currentUser.balance) {
+                showToast('Error', 'Insufficient balance', 'error');
+                return;
+            }
+            
+            if (selectedRecipient.isLocked) {
+                showToast('Error', 'Recipient account is locked', 'error');
+                return;
+            }
+            
+            try {
+                showDBLoading();
+                
+                // Update sender balance
+                const senderDocId = getFirestoreDocId(currentUser.id);
+                const senderRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', senderDocId);
+                await updateDoc(senderRef, {
+                    balance: currentUser.balance - amount
+                });
+                
+                // Update recipient balance
+                const recipientDocId = getFirestoreDocId(selectedRecipient.id);
+                const recipientRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', recipientDocId);
+                await updateDoc(recipientRef, {
+                    balance: selectedRecipient.balance + amount
+                });
+                
+                // Record in send money history
+                const sendMoneyHistoryRef = collection(db, 'artifacts', appId, 'public', 'data', 'sendMoneyHistory');
+                await addDoc(sendMoneyHistoryRef, {
+                    id: Date.now(),
+                    userId: currentUser.id,
+                    senderName: currentUser.fullName,
+                    senderUsername: currentUser.username,
+                    recipientId: selectedRecipient.id,
+                    recipientName: selectedRecipient.fullName,
+                    recipientUsername: selectedRecipient.username,
+                    amount: amount,
+                    timestamp: new Date().toISOString(),
+                    status: 'completed'
+                });
+                
+                // Record in history for sender
+                const historyRef = collection(db, 'artifacts', appId, 'public', 'data', 'fundHistory');
+                await addDoc(historyRef, {
+                    id: Date.now(),
+                    userId: currentUser.id,
+                    username: currentUser.username,
+                    amount: amount,
+                    type: 'sendmoney',
+                    method: 'direct',
+                    transactionDetails: `Sent to ${selectedRecipient.fullName} (@${selectedRecipient.username})`,
+                    timestamp: new Date().toISOString(),
+                    status: 'completed'
+                });
+                
+                // Record in history for recipient
+                await addDoc(historyRef, {
+                    id: Date.now() + 1,
+                    userId: selectedRecipient.id,
+                    username: selectedRecipient.username,
+                    amount: amount,
+                    type: 'sendmoney',
+                    method: 'direct',
+                    transactionDetails: `Received from ${currentUser.fullName} (@${currentUser.username})`,
+                    timestamp: new Date().toISOString(),
+                    status: 'completed'
+                });
+                
+                // Create inbox message for recipient
+                const inboxRef = collection(db, 'artifacts', appId, 'public', 'data', 'inboxMessages');
+                const expiresAt = new Date();
+                expiresAt.setDate(expiresAt.getDate() + 3);
+                
+                await addDoc(inboxRef, {
+                    userId: selectedRecipient.id,
+                    title: 'Money Received',
+                    message: `You have received ${formatCurrency(amount)} from ${currentUser.fullName} (@${currentUser.username}).`,
+                    status: 'successful',
+                    type: 'send_money',
+                    isRead: false,
+                    timestamp: new Date().toISOString(),
+                    expiresAt: expiresAt.toISOString()
+                });
+                
+                hideDBLoading();
+                showSuccessPage('sendmoney', amount, 'Direct Transfer', selectedRecipient.fullName);
+                
+                // Reset form and state
+                selectedRecipient = null;
+                setTimeout(() => {
+                    setUserCurrentView('dashboard');
+                }, 3000);
+                
+            } catch (error) {
+                console.error('Send money error:', error);
+                hideDBLoading();
+                showToast('Error', 'Failed to send money', 'error');
+            }
+        }
+
+        // Global function declarations for onclick handlers
+        window.togglePasswordVisibility = togglePasswordVisibility;
         window.logout = logout;
         window.setUserCurrentView = setUserCurrentView;
         window.setCurrentView = setCurrentView;
-        window.togglePasswordVisibility = togglePasswordVisibility;
         window.showDepositFields = showDepositFields;
-        window.closeSuccessPage = closeSuccessPage;
-        window.downloadHistoryCSV = downloadHistoryCSV;
         window.reviewAgentOutTransfer = reviewAgentOutTransfer;
         window.selectLoanTerm = selectLoanTerm;
         window.calculateLoanDetails = calculateLoanDetails;
@@ -5345,8 +5755,17 @@
         window.reviewBkashTransfer = reviewBkashTransfer;
         window.reviewBankTransfer = reviewBankTransfer;
         window.submitFundTransfer = submitFundTransfer;
+        window.handleUserDeposit = handleUserDeposit;
+        window.handleSendMoney = handleSendMoney;
+        window.searchRecipient = searchRecipient;
+        window.selectUser = selectUser;
+        window.clearRecipient = clearRecipient;
+        window.toggleProfileEditMode = toggleProfileEditMode;
+        window.saveProfile = saveProfile;
         window.payInstallment = payInstallment;
         window.clearLoan = clearLoan;
+        window.closeSuccessPage = closeSuccessPage;
+        window.downloadHistoryCSV = downloadHistoryCSV;
         window.openCreateUserModal = openCreateUserModal;
         window.closeCreateUserModal = closeCreateUserModal;
         window.openEditUserModal = openEditUserModal;
@@ -5355,25 +5774,26 @@
         window.closeDepositModal = closeDepositModal;
         window.openDeleteUserModal = openDeleteUserModal;
         window.closeDeleteUserModal = closeDeleteUserModal;
+        window.toggleUserLock = toggleUserLock;
         window.showApproveTransactionModal = showApproveTransactionModal;
         window.closeApproveTransactionModal = closeApproveTransactionModal;
         window.showRejectTransactionModal = showRejectTransactionModal;
         window.closeRejectTransactionModal = closeRejectTransactionModal;
+        window.confirmApproveTransaction = confirmApproveTransaction;
+        window.confirmRejectTransaction = confirmRejectTransaction;
         window.showApproveFundTransferModal = showApproveFundTransferModal;
         window.closeApproveFundTransferModal = closeApproveFundTransferModal;
         window.showRejectFundTransferModal = showRejectFundTransferModal;
         window.closeRejectFundTransferModal = closeRejectFundTransferModal;
+        window.confirmApproveFundTransfer = confirmApproveFundTransfer;
+        window.confirmRejectFundTransfer = confirmRejectFundTransfer;
         window.showApproveLoanModal = showApproveLoanModal;
         window.closeApproveLoanModal = closeApproveLoanModal;
         window.showRejectLoanModal = showRejectLoanModal;
         window.closeRejectLoanModal = closeRejectLoanModal;
-        window.confirmApproveTransaction = confirmApproveTransaction;
-        window.confirmRejectTransaction = confirmRejectTransaction;
-        window.confirmApproveFundTransfer = confirmApproveFundTransfer;
-        window.confirmRejectFundTransfer = confirmRejectFundTransfer;
         window.confirmApproveLoan = confirmApproveLoan;
         window.confirmRejectLoan = confirmRejectLoan;
-
+        window.confirmDeleteUser = confirmDeleteUser;
     </script>
 </body>
 </html>
