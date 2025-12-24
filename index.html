@@ -667,6 +667,19 @@
         .delete-all-history-btn:hover {
             opacity: 0.9;
         }
+        
+        /* Amount display styles */
+        .amount-positive {
+            color: #00ff00;
+        }
+        
+        .amount-negative {
+            color: #ff4444;
+        }
+        
+        .amount-neutral {
+            color: #FFD700;
+        }
     </style>
 </head>
 <body class="dark-bg text-white min-h-screen">
@@ -864,6 +877,33 @@
         // Format currency
         function formatCurrency(amount) {
             return `৳${parseFloat(amount).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        }
+
+        // Format currency with sign for display
+        function formatCurrencyWithSign(amount, type, isSender = true) {
+            const formatted = formatCurrency(Math.abs(amount));
+            
+            // Determine sign based on transaction type
+            let sign = '';
+            if (type === 'deposit' || (type === 'sendmoney' && !isSender) || type === 'loan_received') {
+                sign = '+';
+            } else if (type === 'withdraw' || type === 'sendmoney' || type === 'fund_transfer' || 
+                      type === 'agent_out' || type === 'loan_installment' || type === 'loan_payoff') {
+                sign = '-';
+            }
+            
+            return `${sign} ${formatted}`;
+        }
+
+        // Get amount display class based on transaction type
+        function getAmountDisplayClass(amount, type, isSender = true) {
+            if (type === 'deposit' || (type === 'sendmoney' && !isSender) || type === 'loan_received') {
+                return 'amount-positive';
+            } else if (type === 'withdraw' || type === 'sendmoney' || type === 'fund_transfer' || 
+                      type === 'agent_out' || type === 'loan_installment' || type === 'loan_payoff') {
+                return 'amount-negative';
+            }
+            return 'amount-neutral';
         }
 
         // Initialize Auth
@@ -1397,7 +1437,7 @@
                             <div class="loan-badge px-4 py-2">
                                 <p class="text-sm font-bold">ACTIVE LOAN</p>
                                 <p class="text-lg font-bold">${formatCurrency(user.loanAmount)}</p>
-                                <p class="text-xs text-gray-400">Loan Amount Received: $ ${user.loanAmount}</p>
+                                <p class="text-xs text-gray-400">Loan Amount Received: ৳ ${user.loanAmount}</p>
                             </div>
                         ` : ''}
                     </div>
@@ -1501,7 +1541,7 @@
                         </div>
                         
                         <div>
-                            <label class="block text-sm font-medium text-gray-400 mb-2">Amount ($)</label>
+                            <label class="block text-sm font-medium text-gray-400 mb-2">Amount (৳)</label>
                             <input type="number" id="agentOutAmount" min="10" step="0.01" max="${currentUser.balance}" class="bee-input" placeholder="0.00" required>
                         </div>
                         
@@ -2243,7 +2283,7 @@
                         </div>
                         
                         <div>
-                            <label class="block text-sm font-medium text-gray-400 mb-2">Amount ($)</label>
+                            <label class="block text-sm font-medium text-gray-400 mb-2">Amount (৳)</label>
                             <input type="number" id="bkashAmount" min="10" step="0.01" max="${currentUser.balance}" class="bee-input" placeholder="0.00" required>
                         </div>
                         
@@ -2308,7 +2348,7 @@
                         </div>
                         
                         <div>
-                            <label class="block text-sm font-medium text-gray-400 mb-2">Amount ($)</label>
+                            <label class="block text-sm font-medium text-gray-400 mb-2">Amount (৳)</label>
                             <input type="number" id="bankAmount" min="10" step="0.01" max="${currentUser.balance}" class="bee-input" placeholder="0.00" required>
                         </div>
                         
@@ -2447,7 +2487,7 @@
             `;
         }
 
-        // Render User Inbox - UPDATED: Show approval/rejection reasons and filter expired messages
+        // Render User Inbox - FIXED: Show correct amount signs
         function renderUserInbox() {
             // Filter messages for current user and not expired (3 days)
             const userInbox = localInboxMessages
@@ -2499,6 +2539,37 @@
                         // Calculate days until expiry
                         const expiresInDays = Math.ceil((new Date(msg.expiresAt) - new Date()) / (1000 * 60 * 60 * 24));
                         
+                        // Determine amount display based on message type
+                        let amountDisplay = '';
+                        if (msg.message && msg.message.includes('৳')) {
+                            // Extract amount from message
+                            const amountMatch = msg.message.match(/৳([\d,.]+)/);
+                            if (amountMatch) {
+                                const amount = parseFloat(amountMatch[1].replace(/,/g, ''));
+                                
+                                // Determine sign based on message type
+                                let sign = '';
+                                let amountClass = '';
+                                
+                                if (msg.title.includes('Deposit') || msg.title.includes('Loan Approved') || 
+                                    (msg.title.includes('Received') && msg.message.includes('received'))) {
+                                    sign = '+';
+                                    amountClass = 'amount-positive';
+                                } else if (msg.title.includes('Sent') || msg.title.includes('Transfer') || 
+                                          msg.title.includes('Installment') || msg.title.includes('Loan Paid') ||
+                                          msg.title.includes('Withdrawal')) {
+                                    sign = '-';
+                                    amountClass = 'amount-negative';
+                                }
+                                
+                                amountDisplay = `
+                                    <div class="mt-2">
+                                        <p class="text-lg font-bold ${amountClass}">${sign}৳${amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+                                    </div>
+                                `;
+                            }
+                        }
+                        
                         return `
                             <div class="inbox-item ${statusClass}">
                                 <div class="flex justify-between items-start mb-2">
@@ -2507,6 +2578,7 @@
                                             ${statusIcon}${msg.title}
                                         </div>
                                         <p class="text-gray-400 text-sm">${msg.message}</p>
+                                        ${amountDisplay}
                                         ${msg.approvalReason ? `<p class="text-green-400 text-sm mt-2"><strong>Approval Reason:</strong> ${msg.approvalReason}</p>` : ''}
                                         ${msg.rejectionReason ? `<p class="text-red-400 text-sm mt-2"><strong>Rejection Reason:</strong> ${msg.rejectionReason}</p>` : ''}
                                     </div>
@@ -2534,7 +2606,7 @@
             `;
         }
 
-        // Render Recent Activity (Updated to include fund transfers) - UPDATED: Show only last 10 items
+        // Render Recent Activity (Updated to include fund transfers) - FIXED: Show correct amount signs
         function renderRecentActivity() {
             // Get all user transactions (send money, deposits, withdrawals, fund transfers)
             const userHistory = localHistory
@@ -2569,59 +2641,68 @@
                 const isFundTransfer = activity.hasOwnProperty('transferId') || activity.type === 'fund_transfer';
                 const isAgentOut = activity.type === 'agent_out';
                 const isLoanPayment = activity.type === 'loan_installment' || activity.type === 'loan_payoff';
+                const isLoanReceived = activity.type === 'loan_received';
                 
                 let iconClass = '';
                 let icon = '';
                 let title = '';
                 let amountClass = '';
                 
-                if (isDeposit) {
+                if (isDeposit || isLoanReceived) {
                     iconClass = 'bg-green-900/30 border-green-800';
                     icon = 'fa-arrow-down';
-                    title = 'Deposit';
-                    amountClass = 'text-green-400';
+                    title = isLoanReceived ? 'Loan Received' : 'Deposit';
+                    amountClass = 'amount-positive';
                 } else if (isSendMoney) {
                     iconClass = 'bg-purple-900/30 border-purple-800';
                     icon = 'fa-exchange-alt';
                     title = 'Send Money';
-                    amountClass = 'text-red-400';
+                    amountClass = 'amount-negative';
                 } else if (isWithdraw) {
                     iconClass = 'bg-red-900/30 border-red-800';
                     icon = 'fa-arrow-up';
                     title = 'Withdrawal';
-                    amountClass = 'text-red-400';
+                    amountClass = 'amount-negative';
                 } else if (isLoanPayment) {
                     iconClass = 'bg-yellow-900/30 border-yellow-800';
                     icon = 'fa-hand-holding-usd';
-                    title = 'Loan Payment';
-                    amountClass = 'text-red-400';
+                    title = activity.type === 'loan_payoff' ? 'Loan Payoff' : 'Loan Installment';
+                    amountClass = 'amount-negative';
                 } else if (isFundTransfer) {
                     if (isAgentOut) {
                         iconClass = 'bg-orange-900/30 border-orange-800';
                         icon = 'fa-user-tie';
                         title = 'Agent Out';
-                        amountClass = 'text-red-400';
+                        amountClass = 'amount-negative';
                     } else if (activity.type === 'bkash') {
                         iconClass = 'bg-green-900/30 border-green-800';
                         icon = 'fa-mobile-alt';
                         title = 'bKash Transfer';
-                        amountClass = 'text-red-400';
+                        amountClass = 'amount-negative';
                     } else {
                         iconClass = 'bg-blue-900/30 border-blue-800';
                         icon = 'fa-university';
                         title = 'Bank Transfer';
-                        amountClass = 'text-red-400';
+                        amountClass = 'amount-negative';
                     }
                 }
                 
                 const status = activity.status || 'completed';
                 const isPending = status === 'pending';
                 
+                // Determine sign for display
+                let sign = '';
+                if (isDeposit || isLoanReceived) {
+                    sign = '+';
+                } else {
+                    sign = '-';
+                }
+                
                 return `
                     <div class="flex items-center justify-between py-3 border-b border-gray-800 last:border-0">
                         <div class="flex items-center">
                             <div class="icon-container mr-3 ${iconClass}">
-                                <i class="fas ${icon} ${isDeposit ? 'text-green-400' : isSendMoney ? 'text-purple-400' : isLoanPayment ? 'text-yellow-400' : isAgentOut ? 'text-orange-400' : isFundTransfer && activity.type === 'bkash' ? 'text-green-400' : isFundTransfer ? 'text-blue-400' : 'text-red-400'}"></i>
+                                <i class="fas ${icon} ${isDeposit || isLoanReceived ? 'text-green-400' : isSendMoney ? 'text-purple-400' : isLoanPayment ? 'text-yellow-400' : isAgentOut ? 'text-orange-400' : isFundTransfer && activity.type === 'bkash' ? 'text-green-400' : isFundTransfer ? 'text-blue-400' : 'text-red-400'}"></i>
                             </div>
                             <div>
                                 <p class="font-medium">${title}</p>
@@ -2630,7 +2711,7 @@
                             </div>
                         </div>
                         <div class="text-right">
-                            <p class="font-bold ${amountClass}">${isDeposit ? '+' : '-'} ${formatCurrency(activity.amount)}</p>
+                            <p class="font-bold ${amountClass}">${sign} ${formatCurrency(activity.amount)}</p>
                             <p class="text-xs text-gray-400">${activity.method || 'N/A'}</p>
                         </div>
                     </div>
@@ -2638,7 +2719,7 @@
             }).join('');
         }
 
-        // Render User History Page (Updated to include fund transfers) - UPDATED: Show only last 10 histories
+        // Render User History Page - FIXED: Show correct amount signs
         function renderUserHistory() {
             // Get send money history
             const userSendMoneyHistory = localSendMoneyHistory
@@ -2660,7 +2741,7 @@
 
             // Get deposit/withdrawal history
             const userTransactions = localHistory
-                .filter(log => log.userId === currentUser.id && (log.type === 'deposit' || log.type === 'withdraw' || log.type === 'loan_installment' || log.type === 'loan_payoff'))
+                .filter(log => log.userId === currentUser.id && (log.type === 'deposit' || log.type === 'withdraw' || log.type === 'loan_installment' || log.type === 'loan_payoff' || log.type === 'loan_received'))
                 .map(log => ({
                     ...log,
                     transactionType: log.type,
@@ -2683,6 +2764,7 @@
                             const isDeposit = log.transactionType === 'deposit';
                             const isWithdraw = log.transactionType === 'withdraw';
                             const isLoanPayment = log.transactionType === 'loan_installment' || log.transactionType === 'loan_payoff';
+                            const isLoanReceived = log.transactionType === 'loan_received';
                             const isAgentOut = log.type === 'agent_out';
                             const isSender = log.userId === currentUser.id;
                             
@@ -2693,13 +2775,22 @@
                             let amountClass = '';
                             let statusBadge = '';
                             
+                            // Determine sign and styling
+                            let sign = '';
+                            if (isDeposit || isLoanReceived || (isSendMoney && !isSender)) {
+                                sign = '+';
+                                amountClass = 'amount-positive';
+                            } else {
+                                sign = '-';
+                                amountClass = 'amount-negative';
+                            }
+                            
                             if (isSendMoney) {
                                 const otherUser = isSender ? (log.recipientName || 'User') : (log.senderName || 'User');
                                 iconClass = isSender ? 'bg-purple-900/30 border-purple-800' : 'bg-green-900/30 border-green-800';
                                 icon = isSender ? 'fa-arrow-up' : 'fa-arrow-down';
                                 title = isSender ? `Sent to ${otherUser}` : `Received from ${otherUser}`;
                                 description = isSender ? 'Money Transfer' : 'Money Received';
-                                amountClass = isSender ? 'text-red-400' : 'text-green-400';
                                 statusBadge = '<span class="status-badge status-active">Completed</span>';
                             } else if (isFundTransfer) {
                                 if (isAgentOut) {
@@ -2718,7 +2809,6 @@
                                     title = 'Bank Transfer';
                                     description = `To: ${log.account}`;
                                 }
-                                amountClass = 'text-red-400';
                                 
                                 if (log.status === 'pending') {
                                     statusBadge = '<span class="status-badge status-pending">Pending</span>';
@@ -2732,21 +2822,24 @@
                                 icon = 'fa-arrow-down';
                                 title = 'Deposit';
                                 description = log.method || 'N/A';
-                                amountClass = 'text-green-400';
                                 statusBadge = log.status === 'pending' ? '<span class="status-badge status-pending">Pending</span>' : '<span class="status-badge status-active">Completed</span>';
                             } else if (isWithdraw) {
                                 iconClass = 'bg-red-900/30 border-red-800';
                                 icon = 'fa-arrow-up';
                                 title = 'Withdrawal';
                                 description = log.method || 'N/A';
-                                amountClass = 'text-red-400';
                                 statusBadge = log.status === 'pending' ? '<span class="status-badge status-pending">Pending</span>' : '<span class="status-badge status-active">Completed</span>';
                             } else if (isLoanPayment) {
                                 iconClass = 'bg-yellow-900/30 border-yellow-800';
                                 icon = 'fa-hand-holding-usd';
                                 title = log.transactionType === 'loan_payoff' ? 'Loan Payoff' : 'Loan Installment';
                                 description = log.transactionDetails || 'Loan Payment';
-                                amountClass = 'text-red-400';
+                                statusBadge = '<span class="status-badge status-active">Completed</span>';
+                            } else if (isLoanReceived) {
+                                iconClass = 'bg-green-900/30 border-green-800';
+                                icon = 'fa-hand-holding-usd';
+                                title = 'Loan Received';
+                                description = 'Loan Amount Added';
                                 statusBadge = '<span class="status-badge status-active">Completed</span>';
                             }
                             
@@ -2754,7 +2847,7 @@
                                 <div class="flex items-center justify-between p-3 border border-gray-800 rounded-xl">
                                     <div class="flex items-center">
                                         <div class="icon-container mr-3 ${iconClass}">
-                                            <i class="fas ${icon} ${isSendMoney && isSender ? 'text-purple-400' : isSendMoney && !isSender ? 'text-green-400' : isLoanPayment ? 'text-yellow-400' : isAgentOut ? 'text-orange-400' : isFundTransfer && log.type === 'bkash' ? 'text-green-400' : isFundTransfer ? 'text-blue-400' : isDeposit ? 'text-green-400' : 'text-red-400'}"></i>
+                                            <i class="fas ${icon} ${isSendMoney && isSender ? 'text-purple-400' : isSendMoney && !isSender ? 'text-green-400' : isLoanPayment ? 'text-yellow-400' : isLoanReceived ? 'text-green-400' : isAgentOut ? 'text-orange-400' : isFundTransfer && log.type === 'bkash' ? 'text-green-400' : isFundTransfer ? 'text-blue-400' : isDeposit ? 'text-green-400' : 'text-red-400'}"></i>
                                         </div>
                                         <div>
                                             <p class="font-medium">${title}</p>
@@ -2763,7 +2856,7 @@
                                         </div>
                                     </div>
                                     <div class="text-right">
-                                        <p class="font-bold ${amountClass}">${isSendMoney && !isSender ? '+' : isDeposit ? '+' : '-'} ${formatCurrency(log.amount)}</p>
+                                        <p class="font-bold ${amountClass}">${sign} ${formatCurrency(log.amount)}</p>
                                         ${statusBadge}
                                     </div>
                                 </div>
@@ -2834,7 +2927,7 @@
                             </div>
                             
                             <div>
-                                <label class="block text-sm font-medium text-gray-400 mb-2">Amount ($)</label>
+                                <label class="block text-sm font-medium text-gray-400 mb-2">Amount (৳)</label>
                                 <input type="number" id="bkashDepositAmount" min="10" step="0.01" class="bee-input" placeholder="Enter amount">
                             </div>
                         </div>
@@ -2877,7 +2970,7 @@
                             </div>
                             
                             <div>
-                                <label class="block text-sm font-medium text-gray-400 mb-2">Amount ($)</label>
+                                <label class="block text-sm font-medium text-gray-400 mb-2">Amount (৳)</label>
                                 <input type="number" id="bankDepositAmount" min="10" step="0.01" class="bee-input" placeholder="Enter amount">
                             </div>
                         </div>
@@ -3853,16 +3946,16 @@
                                         <i class="fas fa-times"></i>
                                     </button>
                                     <div class="flex items-center">
-                                        <div class="icon-container mr-3 ${log.type === 'deposit' ? 'bg-green-900/30 border-green-800' : log.type === 'sendmoney' ? 'bg-purple-900/30 border-purple-800' : log.type === 'withdraw' ? 'bg-red-900/30 border-red-800' : log.type === 'agent_out' ? 'bg-orange-900/30 border-orange-800' : log.type === 'loan_installment' || log.type === 'loan_payoff' ? 'bg-yellow-900/30 border-yellow-800' : 'bg-gray-900/30 border-gray-800'}">
-                                            <i class="fas ${log.type === 'deposit' ? 'fa-arrow-down' : log.type === 'sendmoney' ? 'fa-exchange-alt' : log.type === 'withdraw' ? 'fa-arrow-up' : log.type === 'agent_out' ? 'fa-user-tie' : log.type === 'loan_installment' || log.type === 'loan_payoff' ? 'fa-hand-holding-usd' : 'fa-exchange-alt'} ${log.type === 'deposit' ? 'text-green-400' : log.type === 'sendmoney' ? 'text-purple-400' : log.type === 'withdraw' ? 'text-red-400' : log.type === 'agent_out' ? 'text-orange-400' : log.type === 'loan_installment' || log.type === 'loan_payoff' ? 'text-yellow-400' : 'text-gray-400'}"></i>
+                                        <div class="icon-container mr-3 ${log.type === 'deposit' || log.type === 'loan_received' ? 'bg-green-900/30 border-green-800' : log.type === 'sendmoney' ? 'bg-purple-900/30 border-purple-800' : log.type === 'withdraw' ? 'bg-red-900/30 border-red-800' : log.type === 'agent_out' ? 'bg-orange-900/30 border-orange-800' : log.type === 'loan_installment' || log.type === 'loan_payoff' ? 'bg-yellow-900/30 border-yellow-800' : 'bg-gray-900/30 border-gray-800'}">
+                                            <i class="fas ${log.type === 'deposit' || log.type === 'loan_received' ? 'fa-arrow-down' : log.type === 'sendmoney' ? 'fa-exchange-alt' : log.type === 'withdraw' ? 'fa-arrow-up' : log.type === 'agent_out' ? 'fa-user-tie' : log.type === 'loan_installment' || log.type === 'loan_payoff' ? 'fa-hand-holding-usd' : 'fa-exchange-alt'} ${log.type === 'deposit' || log.type === 'loan_received' ? 'text-green-400' : log.type === 'sendmoney' ? 'text-purple-400' : log.type === 'withdraw' ? 'text-red-400' : log.type === 'agent_out' ? 'text-orange-400' : log.type === 'loan_installment' || log.type === 'loan_payoff' ? 'text-yellow-400' : 'text-gray-400'}"></i>
                                         </div>
                                         <div>
                                             <p class="font-medium">${user ? user.fullName : 'Unknown User'}</p>
-                                            <p class="text-xs text-gray-400">${log.type === 'agent_out' ? 'AGENT OUT' : log.type === 'loan_installment' ? 'LOAN INSTALLMENT' : log.type === 'loan_payoff' ? 'LOAN PAYOFF' : log.type.toUpperCase()} • ${new Date(log.timestamp).toLocaleDateString()}</p>
+                                            <p class="text-xs text-gray-400">${log.type === 'agent_out' ? 'AGENT OUT' : log.type === 'loan_installment' ? 'LOAN INSTALLMENT' : log.type === 'loan_payoff' ? 'LOAN PAYOFF' : log.type === 'loan_received' ? 'LOAN RECEIVED' : log.type.toUpperCase()} • ${new Date(log.timestamp).toLocaleDateString()}</p>
                                         </div>
                                     </div>
                                     <div class="text-right">
-                                        <p class="font-bold ${log.type === 'deposit' ? 'text-green-400' : 'text-red-400'}">${log.type === 'deposit' ? '+' : '-'} ${formatCurrency(log.amount)}</p>
+                                        <p class="font-bold ${log.type === 'deposit' || log.type === 'loan_received' ? 'text-green-400' : 'text-red-400'}">${log.type === 'deposit' || log.type === 'loan_received' ? '+' : '-'} ${formatCurrency(log.amount)}</p>
                                         <p class="text-xs text-gray-400">${log.method || 'N/A'}</p>
                                     </div>
                                 </div>
@@ -5289,49 +5382,46 @@
             } catch (error) {
                 console.error('Clear loan error:', error);
                 hideDBLoading();
-                showToast('Error', 'Failed to process loan payoff', 'error');
+                showToast('Error', 'Failed to clear loan', 'error');
             }
         }
 
-        // Admin Form Handlers
+        // Admin User Management Functions
         async function handleCreateUser(e) {
             e.preventDefault();
-            const formData = new FormData(e.target);
+            const form = e.target;
+            const formData = new FormData(form);
+            
+            const newUser = {
+                id: Date.now(),
+                username: formData.get('username'),
+                password: formData.get('password'),
+                role: 'user',
+                balance: parseFloat(formData.get('balance')),
+                isLocked: false,
+                fullName: formData.get('fullName'),
+                email: '',
+                phone: '',
+                address: '',
+                accountType: 'normal',
+                userType: formData.get('userType'),
+                createdAt: new Date().toISOString(),
+                loanAmount: 0,
+                loanActive: false,
+                profilePicture: '',
+                bkashAccount: formData.get('bkashAccount') || '',
+                bankName: formData.get('bankName') || '',
+                bankAccount: formData.get('bankAccount') || ''
+            };
             
             try {
                 showDBLoading();
-                
-                // Get next user ID
-                const nextId = localUsers.length > 0 ? Math.max(...localUsers.map(u => u.id)) + 1 : 4;
-                
                 const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'users');
-                await addDoc(usersRef, {
-                    id: nextId,
-                    username: formData.get('username'),
-                    password: formData.get('password'),
-                    role: 'user',
-                    balance: parseFloat(formData.get('balance')),
-                    isLocked: false,
-                    fullName: formData.get('fullName'),
-                    email: '',
-                    phone: '',
-                    address: '',
-                    accountType: 'normal',
-                    userType: formData.get('userType'),
-                    createdAt: new Date().toISOString(),
-                    loanAmount: 0,
-                    loanActive: false,
-                    profilePicture: '',
-                    bkashAccount: formData.get('bkashAccount') || '',
-                    bankName: formData.get('bankName') || '',
-                    bankAccount: formData.get('bankAccount') || ''
-                });
-                
+                await addDoc(usersRef, newUser);
                 hideDBLoading();
                 closeCreateUserModal();
                 showToast('Success', 'User created successfully', 'success');
-                e.target.reset();
-                
+                form.reset();
             } catch (error) {
                 console.error('Create user error:', error);
                 hideDBLoading();
@@ -5343,28 +5433,26 @@
             e.preventDefault();
             const userId = parseInt(document.getElementById('editUserId').value);
             
+            const updates = {
+                fullName: document.getElementById('editUserFullName').value,
+                userType: document.getElementById('editUserType').value,
+                email: document.getElementById('editUserEmail').value || '',
+                phone: document.getElementById('editUserPhone').value || '',
+                address: document.getElementById('editUserAddress').value || '',
+                profilePicture: document.getElementById('editUserProfilePicture').value || '',
+                bkashAccount: document.getElementById('editUserBkashAccount').value || '',
+                bankName: document.getElementById('editUserBankName').value || '',
+                bankAccount: document.getElementById('editUserBankAccount').value || ''
+            };
+            
             try {
                 showDBLoading();
-                
                 const userDocId = getFirestoreDocId(userId);
                 const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', userDocId);
-                
-                await updateDoc(userRef, {
-                    fullName: document.getElementById('editUserFullName').value,
-                    userType: document.getElementById('editUserType').value,
-                    email: document.getElementById('editUserEmail').value,
-                    phone: document.getElementById('editUserPhone').value,
-                    address: document.getElementById('editUserAddress').value,
-                    profilePicture: document.getElementById('editUserProfilePicture').value || '',
-                    bkashAccount: document.getElementById('editUserBkashAccount').value || '',
-                    bankName: document.getElementById('editUserBankName').value || '',
-                    bankAccount: document.getElementById('editUserBankAccount').value || ''
-                });
-                
+                await updateDoc(userRef, updates);
                 hideDBLoading();
                 closeEditUserModal();
                 showToast('Success', 'User updated successfully', 'success');
-                
             } catch (error) {
                 console.error('Edit user error:', error);
                 hideDBLoading();
@@ -5379,19 +5467,14 @@
             const method = document.getElementById('adminDepositMethod').value;
             const trxId = document.getElementById('adminDepositTrxId').value;
             
-            if (!amount || amount <= 0) {
-                showToast('Error', 'Please enter a valid amount', 'error');
+            const user = localUsers.find(u => u.id === userId);
+            if (!user) {
+                showToast('Error', 'User not found', 'error');
                 return;
             }
             
             try {
                 showDBLoading();
-                
-                const user = localUsers.find(u => u.id === userId);
-                if (!user) {
-                    showToast('Error', 'User not found', 'error');
-                    return;
-                }
                 
                 // Update user balance
                 const userDocId = getFirestoreDocId(userId);
@@ -5411,11 +5494,10 @@
                     method: method,
                     transactionDetails: `Admin deposit: ${trxId}`,
                     timestamp: new Date().toISOString(),
-                    approvedBy: currentUser.username,
-                    status: 'approved'
+                    status: 'completed'
                 });
                 
-                // Create inbox message for user
+                // Create inbox message
                 const inboxRef = collection(db, 'artifacts', appId, 'public', 'data', 'inboxMessages');
                 const expiresAt = new Date();
                 expiresAt.setDate(expiresAt.getDate() + 3);
@@ -5423,9 +5505,9 @@
                 await addDoc(inboxRef, {
                     userId: userId,
                     title: 'Deposit Approved',
-                    message: `Your deposit of ${formatCurrency(amount)} has been approved and added to your balance.`,
+                    message: `Your deposit of ${formatCurrency(amount)} has been approved and added to your account.`,
                     status: 'successful',
-                    type: 'deposit',
+                    type: 'deposit_approval',
                     isRead: false,
                     timestamp: new Date().toISOString(),
                     expiresAt: expiresAt.toISOString()
@@ -5433,8 +5515,10 @@
                 
                 hideDBLoading();
                 closeDepositModal();
-                showToast('Success', `Deposited ${formatCurrency(amount)} to user`, 'success');
-                e.target.reset();
+                showToast('Success', `Deposited ${formatCurrency(amount)} to ${user.username}`, 'success');
+                
+                // Reset form
+                document.getElementById('adminDepositForm').reset();
                 
             } catch (error) {
                 console.error('Admin deposit error:', error);
@@ -5443,10 +5527,10 @@
             }
         }
 
-        // Confirm Functions
+        // Transaction approval functions
         async function confirmApproveTransaction() {
-            const reason = document.getElementById('approveTransactionReason').value;
             const { transactionId, userId, type, amount, method } = window.approveTransactionData;
+            const reason = document.getElementById('approveTransactionReason').value;
             
             try {
                 showDBLoading();
@@ -5454,10 +5538,7 @@
                 // Update transaction status
                 const transactionRef = doc(db, 'artifacts', appId, 'public', 'data', 'transactions', transactionId);
                 await updateDoc(transactionRef, {
-                    status: 'approved',
-                    approvedAt: new Date().toISOString(),
-                    approvedBy: currentUser.username,
-                    approvalReason: reason || null
+                    status: 'approved'
                 });
                 
                 // Update user balance if deposit
@@ -5474,20 +5555,32 @@
                 
                 // Record in history
                 const historyRef = collection(db, 'artifacts', appId, 'public', 'data', 'fundHistory');
-                const transaction = localTransactions.find(t => t.docId === transactionId);
-                
                 await addDoc(historyRef, {
                     id: Date.now(),
                     userId: userId,
-                    username: transaction.username,
+                    username: localUsers.find(u => u.id === userId)?.username || 'Unknown',
                     amount: amount,
-                    method: method,
                     type: type,
-                    transactionDetails: transaction.transactionDetails,
+                    method: method,
+                    transactionDetails: `Transaction approved${reason ? `: ${reason}` : ''}`,
                     timestamp: new Date().toISOString(),
-                    approvedBy: currentUser.username,
-                    approvalReason: reason || null,
-                    status: 'approved'
+                    status: 'completed'
+                });
+                
+                // Create inbox message
+                const inboxRef = collection(db, 'artifacts', appId, 'public', 'data', 'inboxMessages');
+                const expiresAt = new Date();
+                expiresAt.setDate(expiresAt.getDate() + 3);
+                
+                await addDoc(inboxRef, {
+                    userId: userId,
+                    title: type === 'deposit' ? 'Deposit Approved' : 'Withdrawal Approved',
+                    message: `Your ${type} of ${formatCurrency(amount)} has been approved${reason ? `: ${reason}` : ''}.`,
+                    status: 'successful',
+                    type: `${type}_approval`,
+                    isRead: false,
+                    timestamp: new Date().toISOString(),
+                    expiresAt: expiresAt.toISOString()
                 });
                 
                 hideDBLoading();
@@ -5502,8 +5595,8 @@
         }
 
         async function confirmRejectTransaction() {
-            const reason = document.getElementById('rejectTransactionReason').value;
             const transactionId = window.rejectTransactionId;
+            const reason = document.getElementById('rejectTransactionReason').value;
             
             if (!reason) {
                 showToast('Error', 'Please enter rejection reason', 'error');
@@ -5511,17 +5604,39 @@
             }
             
             try {
+                showDBLoading();
+                
+                // Get transaction details
+                const transaction = localTransactions.find(t => t.docId === transactionId);
+                if (!transaction) {
+                    throw new Error('Transaction not found');
+                }
+                
+                // Update transaction status
                 const transactionRef = doc(db, 'artifacts', appId, 'public', 'data', 'transactions', transactionId);
                 await updateDoc(transactionRef, {
+                    status: 'rejected'
+                });
+                
+                // Create inbox message
+                const inboxRef = collection(db, 'artifacts', appId, 'public', 'data', 'inboxMessages');
+                const expiresAt = new Date();
+                expiresAt.setDate(expiresAt.getDate() + 3);
+                
+                await addDoc(inboxRef, {
+                    userId: transaction.userId,
+                    title: transaction.type === 'deposit' ? 'Deposit Rejected' : 'Withdrawal Rejected',
+                    message: `Your ${transaction.type} of ${formatCurrency(transaction.amount)} has been rejected: ${reason}`,
                     status: 'rejected',
-                    rejectedAt: new Date().toISOString(),
-                    rejectedBy: currentUser.username,
-                    rejectionReason: reason
+                    type: `${transaction.type}_rejection`,
+                    isRead: false,
+                    timestamp: new Date().toISOString(),
+                    expiresAt: expiresAt.toISOString()
                 });
                 
                 hideDBLoading();
                 closeRejectTransactionModal();
-                showToast('Transaction Rejected', `Reason: ${reason}`, 'info');
+                showToast('Success', 'Transaction rejected', 'success');
                 
             } catch (error) {
                 console.error('Reject transaction error:', error);
@@ -5530,89 +5645,69 @@
             }
         }
 
+        // Fund transfer approval functions
         async function confirmApproveFundTransfer() {
-            const reason = document.getElementById('approveFundTransferReason').value;
             const { transferId, userId, amount, type } = window.approveFundTransferData;
+            const reason = document.getElementById('approveFundTransferReason').value;
             
             try {
                 showDBLoading();
                 
-                const transfer = localFundTransfers.find(t => t.docId === transferId);
-                if (!transfer) {
-                    showToast('Error', 'Transfer not found', 'error');
-                    return;
-                }
-                
                 // Update transfer status
                 const transferRef = doc(db, 'artifacts', appId, 'public', 'data', 'fundTransfers', transferId);
                 await updateDoc(transferRef, {
-                    status: 'successful',
-                    approvedAt: new Date().toISOString(),
-                    approvedBy: currentUser.username,
-                    approvalReason: reason || null
+                    status: 'successful'
                 });
-                
-                // Find and update the existing pending inbox message
-                const pendingMessage = localInboxMessages.find(msg => 
-                    msg.userId === userId && 
-                    msg.transferId === transferId && 
-                    msg.status === 'processing'
-                );
-                
-                if (pendingMessage) {
-                    const msgRef = doc(db, 'artifacts', appId, 'public', 'data', 'inboxMessages', pendingMessage.docId);
-                    const chargePercentage = type === 'bkash' ? 0 : (type === 'agent_out' ? 0.88 : 0.88);
-                    const chargeAmount = amount * (chargePercentage / 100);
-                    const totalDeduction = amount + chargeAmount;
-                    
-                    let title = '';
-                    if (type === 'agent_out') {
-                        title = 'bKash Agent Cash Out Successful';
-                    } else if (type === 'bkash') {
-                        title = 'bKash Personal Successful';
-                    } else {
-                        title = 'Bank Transfer Successful';
-                    }
-                    
-                    await updateDoc(msgRef, {
-                        title: title,
-                        message: `Your transfer of ${formatCurrency(amount)} to ${transfer.account} has been successfully completed. Total Deduction: ${formatCurrency(totalDeduction)}.`,
-                        status: 'successful',
-                        approvalReason: reason || null,
-                        isRead: false
-                    });
-                }
                 
                 // Record in history
                 const historyRef = collection(db, 'artifacts', appId, 'public', 'data', 'fundHistory');
                 await addDoc(historyRef, {
                     id: Date.now(),
                     userId: userId,
-                    username: transfer.username,
+                    username: localUsers.find(u => u.id === userId)?.username || 'Unknown',
                     amount: amount,
-                    type: type === 'agent_out' ? 'agent_out' : 'fund_transfer',
-                    method: type,
-                    transactionDetails: `${type === 'agent_out' ? 'bKash Agent' : (type === 'bkash' ? 'bKash' : 'Bank')} transfer to ${transfer.account}`,
+                    type: type,
+                    method: type === 'bkash' ? 'bKash' : type === 'bank' ? 'Bank' : 'Agent',
+                    transactionDetails: `Fund transfer approved${reason ? `: ${reason}` : ''}`,
                     timestamp: new Date().toISOString(),
-                    approvedBy: currentUser.username,
-                    approvalReason: reason || null,
-                    status: 'approved'
+                    status: 'completed'
+                });
+                
+                // Create inbox message
+                const inboxRef = collection(db, 'artifacts', appId, 'public', 'data', 'inboxMessages');
+                const expiresAt = new Date();
+                expiresAt.setDate(expiresAt.getDate() + 3);
+                
+                let title = '';
+                if (type === 'agent_out') title = 'Agent Out Approved';
+                else if (type === 'bkash') title = 'bKash Transfer Approved';
+                else title = 'Bank Transfer Approved';
+                
+                await addDoc(inboxRef, {
+                    userId: userId,
+                    title: title,
+                    message: `Your ${type === 'agent_out' ? 'agent out' : type === 'bkash' ? 'bKash transfer' : 'bank transfer'} of ${formatCurrency(amount)} has been approved${reason ? `: ${reason}` : ''}.`,
+                    status: 'successful',
+                    type: 'fund_transfer_approval',
+                    isRead: false,
+                    timestamp: new Date().toISOString(),
+                    expiresAt: expiresAt.toISOString()
                 });
                 
                 hideDBLoading();
                 closeApproveFundTransferModal();
-                showToast('Success', 'Transfer approved successfully', 'success');
+                showToast('Success', 'Fund transfer approved', 'success');
                 
             } catch (error) {
                 console.error('Approve fund transfer error:', error);
                 hideDBLoading();
-                showToast('Error', 'Failed to approve transfer', 'error');
+                showToast('Error', 'Failed to approve fund transfer', 'error');
             }
         }
 
         async function confirmRejectFundTransfer() {
-            const reason = document.getElementById('rejectFundTransferReason').value;
             const transferId = window.rejectTransferId;
+            const reason = document.getElementById('rejectFundTransferReason').value;
             
             if (!reason) {
                 showToast('Error', 'Please enter rejection reason', 'error');
@@ -5622,66 +5717,69 @@
             try {
                 showDBLoading();
                 
+                // Get transfer details
                 const transfer = localFundTransfers.find(t => t.docId === transferId);
                 if (!transfer) {
-                    showToast('Error', 'Transfer not found', 'error');
-                    return;
+                    throw new Error('Transfer not found');
                 }
                 
                 // Update transfer status
                 const transferRef = doc(db, 'artifacts', appId, 'public', 'data', 'fundTransfers', transferId);
                 await updateDoc(transferRef, {
-                    status: 'rejected',
-                    rejectedAt: new Date().toISOString(),
-                    rejectedBy: currentUser.username,
-                    rejectionReason: reason
+                    status: 'rejected'
                 });
                 
-                // Refund amount to user (add back the deducted amount)
-                const userDocId = getFirestoreDocId(transfer.userId);
-                const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', userDocId);
-                
+                // Refund the deducted amount to user balance
                 const user = localUsers.find(u => u.id === transfer.userId);
-                const chargePercentage = transfer.type === 'bkash' ? 0 : (transfer.type === 'agent_out' ? 0.88 : 0.88);
-                const chargeAmount = transfer.amount * (chargePercentage / 100);
-                const totalDeduction = transfer.amount + chargeAmount;
-                
-                await updateDoc(userRef, {
-                    balance: user.balance + totalDeduction
-                });
-                
-                // Update inbox message
-                const pendingMessage = localInboxMessages.find(msg => 
-                    msg.userId === transfer.userId && 
-                    msg.transferId === transferId && 
-                    msg.status === 'processing'
-                );
-                
-                if (pendingMessage) {
-                    const msgRef = doc(db, 'artifacts', appId, 'public', 'data', 'inboxMessages', pendingMessage.docId);
-                    await updateDoc(msgRef, {
-                        title: 'Transfer Rejected',
-                        message: `Your transfer of ${formatCurrency(transfer.amount)} to ${transfer.account} has been rejected. Reason: ${reason}. The amount has been refunded to your account.`,
-                        status: 'rejected',
-                        rejectionReason: reason,
-                        isRead: false
+                if (user) {
+                    const userDocId = getFirestoreDocId(transfer.userId);
+                    const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', userDocId);
+                    
+                    const chargePercentage = transfer.type === 'bkash' ? 0 : (transfer.type === 'agent_out' ? 0.88 : 0.88);
+                    const chargeAmount = transfer.amount * (chargePercentage / 100);
+                    const totalDeduction = transfer.amount + chargeAmount;
+                    
+                    await updateDoc(userRef, {
+                        balance: user.balance + totalDeduction
                     });
                 }
                 
+                // Create inbox message
+                const inboxRef = collection(db, 'artifacts', appId, 'public', 'data', 'inboxMessages');
+                const expiresAt = new Date();
+                expiresAt.setDate(expiresAt.getDate() + 3);
+                
+                let title = '';
+                if (transfer.type === 'agent_out') title = 'Agent Out Rejected';
+                else if (transfer.type === 'bkash') title = 'bKash Transfer Rejected';
+                else title = 'Bank Transfer Rejected';
+                
+                await addDoc(inboxRef, {
+                    userId: transfer.userId,
+                    title: title,
+                    message: `Your ${transfer.type === 'agent_out' ? 'agent out' : transfer.type === 'bkash' ? 'bKash transfer' : 'bank transfer'} of ${formatCurrency(transfer.amount)} has been rejected: ${reason}. The amount has been refunded to your account.`,
+                    status: 'rejected',
+                    type: 'fund_transfer_rejection',
+                    isRead: false,
+                    timestamp: new Date().toISOString(),
+                    expiresAt: expiresAt.toISOString()
+                });
+                
                 hideDBLoading();
                 closeRejectFundTransferModal();
-                showToast('Transfer Rejected', `Reason: ${reason}. Amount refunded.`, 'info');
+                showToast('Success', 'Fund transfer rejected and amount refunded', 'success');
                 
             } catch (error) {
                 console.error('Reject fund transfer error:', error);
                 hideDBLoading();
-                showToast('Error', 'Failed to reject transfer', 'error');
+                showToast('Error', 'Failed to reject fund transfer', 'error');
             }
         }
 
+        // Loan approval functions
         async function confirmApproveLoan() {
-            const reason = document.getElementById('approveLoanReason').value;
             const { loanId, userId, amount, totalRepayment, term } = window.approveLoanData;
+            const reason = document.getElementById('approveLoanReason').value;
             
             try {
                 showDBLoading();
@@ -5690,38 +5788,18 @@
                 const loanRef = doc(db, 'artifacts', appId, 'public', 'data', 'loanRequests', loanId);
                 await updateDoc(loanRef, {
                     status: 'approved',
-                    approvedAt: new Date().toISOString(),
-                    approvedBy: currentUser.username,
-                    approvalReason: reason || null,
                     isActive: true
                 });
                 
-                // Update user balance and set loan active
-                const userDocId = getFirestoreDocId(userId);
-                const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', userDocId);
+                // Update user balance and loan details
                 const user = localUsers.find(u => u.id === userId);
-                
-                await updateDoc(userRef, {
-                    balance: user.balance + amount,
-                    loanAmount: amount,
-                    loanActive: true
-                });
-                
-                // Update the existing pending inbox message
-                const pendingMessage = localInboxMessages.find(msg => 
-                    msg.userId === userId && 
-                    msg.loanId === loanId && 
-                    msg.status === 'processing'
-                );
-                
-                if (pendingMessage) {
-                    const msgRef = doc(db, 'artifacts', appId, 'public', 'data', 'inboxMessages', pendingMessage.docId);
-                    await updateDoc(msgRef, {
-                        title: 'Loan Approved',
-                        message: `Your loan request of ${formatCurrency(amount)} has been approved. The amount has been added to your balance.`,
-                        status: 'successful',
-                        approvalReason: reason || null,
-                        isRead: false
+                if (user) {
+                    const userDocId = getFirestoreDocId(userId);
+                    const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', userDocId);
+                    await updateDoc(userRef, {
+                        balance: user.balance + amount,
+                        loanActive: true,
+                        loanAmount: totalRepayment
                     });
                 }
                 
@@ -5730,20 +5808,34 @@
                 await addDoc(historyRef, {
                     id: Date.now(),
                     userId: userId,
-                    username: user.username,
+                    username: localUsers.find(u => u.id === userId)?.username || 'Unknown',
                     amount: amount,
-                    type: 'loan_approved',
-                    method: 'loan',
-                    transactionDetails: `Loan approved for ${term} months. Total repayment: ${formatCurrency(totalRepayment)}`,
+                    type: 'loan_received',
+                    method: 'loan_approval',
+                    transactionDetails: `Loan approved: ${formatCurrency(amount)} for ${term} month${term > 1 ? 's' : ''}${reason ? `: ${reason}` : ''}`,
                     timestamp: new Date().toISOString(),
-                    approvedBy: currentUser.username,
-                    approvalReason: reason || null,
-                    status: 'approved'
+                    status: 'completed'
+                });
+                
+                // Create inbox message
+                const inboxRef = collection(db, 'artifacts', appId, 'public', 'data', 'inboxMessages');
+                const expiresAt = new Date();
+                expiresAt.setDate(expiresAt.getDate() + 3);
+                
+                await addDoc(inboxRef, {
+                    userId: userId,
+                    title: 'Loan Approved',
+                    message: `Your loan request of ${formatCurrency(amount)} has been approved${reason ? `: ${reason}` : ''}. The amount has been added to your account.`,
+                    status: 'successful',
+                    type: 'loan_approval',
+                    isRead: false,
+                    timestamp: new Date().toISOString(),
+                    expiresAt: expiresAt.toISOString()
                 });
                 
                 hideDBLoading();
                 closeApproveLoanModal();
-                showToast('Success', 'Loan approved successfully', 'success');
+                showToast('Success', 'Loan approved', 'success');
                 
             } catch (error) {
                 console.error('Approve loan error:', error);
@@ -5753,8 +5845,8 @@
         }
 
         async function confirmRejectLoan() {
-            const reason = document.getElementById('rejectLoanReason').value;
             const loanId = window.rejectLoanId;
+            const reason = document.getElementById('rejectLoanReason').value;
             
             if (!reason) {
                 showToast('Error', 'Please enter rejection reason', 'error');
@@ -5764,42 +5856,37 @@
             try {
                 showDBLoading();
                 
+                // Get loan details
                 const loan = localLoanRequests.find(l => l.docId === loanId);
                 if (!loan) {
-                    showToast('Error', 'Loan not found', 'error');
-                    return;
+                    throw new Error('Loan not found');
                 }
                 
                 // Update loan status
                 const loanRef = doc(db, 'artifacts', appId, 'public', 'data', 'loanRequests', loanId);
                 await updateDoc(loanRef, {
-                    status: 'rejected',
-                    rejectedAt: new Date().toISOString(),
-                    rejectedBy: currentUser.username,
-                    rejectionReason: reason
+                    status: 'rejected'
                 });
                 
-                // Update the existing pending inbox message
-                const pendingMessage = localInboxMessages.find(msg => 
-                    msg.userId === loan.userId && 
-                    msg.loanId === loanId && 
-                    msg.status === 'processing'
-                );
+                // Create inbox message
+                const inboxRef = collection(db, 'artifacts', appId, 'public', 'data', 'inboxMessages');
+                const expiresAt = new Date();
+                expiresAt.setDate(expiresAt.getDate() + 3);
                 
-                if (pendingMessage) {
-                    const msgRef = doc(db, 'artifacts', appId, 'public', 'data', 'inboxMessages', pendingMessage.docId);
-                    await updateDoc(msgRef, {
-                        title: 'Loan Rejected',
-                        message: `Your loan request of ${formatCurrency(loan.amount)} has been rejected. Reason: ${reason}`,
-                        status: 'rejected',
-                        rejectionReason: reason,
-                        isRead: false
-                    });
-                }
+                await addDoc(inboxRef, {
+                    userId: loan.userId,
+                    title: 'Loan Rejected',
+                    message: `Your loan request of ${formatCurrency(loan.amount)} has been rejected: ${reason}`,
+                    status: 'rejected',
+                    type: 'loan_rejection',
+                    isRead: false,
+                    timestamp: new Date().toISOString(),
+                    expiresAt: expiresAt.toISOString()
+                });
                 
                 hideDBLoading();
                 closeRejectLoanModal();
-                showToast('Loan Rejected', `Reason: ${reason}`, 'info');
+                showToast('Success', 'Loan rejected', 'success');
                 
             } catch (error) {
                 console.error('Reject loan error:', error);
@@ -5811,32 +5898,31 @@
         // Make functions available globally
         window.togglePasswordVisibility = togglePasswordVisibility;
         window.showDepositFields = showDepositFields;
-        window.closeSuccessPage = closeSuccessPage;
-        window.downloadHistoryCSV = downloadHistoryCSV;
-        window.deleteHistoryItem = deleteHistoryItem;
-        window.deleteAllHistory = deleteAllHistory;
-        window.logout = logout;
         window.setUserCurrentView = setUserCurrentView;
         window.setCurrentView = setCurrentView;
+        window.logout = logout;
+        window.closeSuccessPage = closeSuccessPage;
         window.searchRecipient = searchRecipient;
         window.selectRecipient = selectRecipient;
         window.clearRecipient = clearRecipient;
+        window.handleSendMoney = handleSendMoney;
+        window.handleUserDeposit = handleUserDeposit;
         window.selectLoanTerm = selectLoanTerm;
         window.calculateLoanDetails = calculateLoanDetails;
         window.showInstallmentPlan = showInstallmentPlan;
         window.showLoanConfirmation = showLoanConfirmation;
         window.submitLoanRequest = submitLoanRequest;
-        window.uploadProfilePicture = uploadProfilePicture;
         window.toggleProfileEditMode = toggleProfileEditMode;
         window.saveProfile = saveProfile;
+        window.uploadProfilePicture = uploadProfilePicture;
         window.startBkashTransfer = startBkashTransfer;
         window.startBankTransfer = startBankTransfer;
         window.reviewBkashTransfer = reviewBkashTransfer;
         window.reviewBankTransfer = reviewBankTransfer;
         window.reviewAgentOutTransfer = reviewAgentOutTransfer;
         window.submitFundTransfer = submitFundTransfer;
-        window.handleUserDeposit = handleUserDeposit;
-        window.handleSendMoney = handleSendMoney;
+        window.payInstallment = payInstallment;
+        window.clearLoan = clearLoan;
         window.openCreateUserModal = openCreateUserModal;
         window.closeCreateUserModal = closeCreateUserModal;
         window.openEditUserModal = openEditUserModal;
@@ -5865,8 +5951,12 @@
         window.confirmRejectFundTransfer = confirmRejectFundTransfer;
         window.confirmApproveLoan = confirmApproveLoan;
         window.confirmRejectLoan = confirmRejectLoan;
-        window.payInstallment = payInstallment;
-        window.clearLoan = clearLoan;
+        window.downloadHistoryCSV = downloadHistoryCSV;
+        window.deleteHistoryItem = deleteHistoryItem;
+        window.deleteAllHistory = deleteAllHistory;
+
+        // Initialize
+        refreshUI();
     </script>
 </body>
 </html>
